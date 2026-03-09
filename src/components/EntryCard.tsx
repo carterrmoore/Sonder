@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { Bookmark } from "lucide-react";
 import CategoryPill from "@/components/ui/CategoryPill";
@@ -30,7 +32,7 @@ export default function EntryCard({
 
   return (
     <Link
-      href={`/${citySlug}/${entry.slug}`}
+      href={`/${citySlug}/${entry.slug ?? entry.id}`}
       className={className}
       style={{
         display: "block",

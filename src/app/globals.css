@@ -1,26 +1,243 @@
+/* =============================================================================
+   Sonder — Global Stylesheet
+   app/globals.css (or src/app/globals.css — wherever your current globals.css lives)
+
+   Replace the ENTIRE contents of your globals.css with this file.
+
+   Tailwind v4 approach:
+     1. @import "tailwindcss" activates the engine
+     2. @theme {} registers all tokens as Tailwind utility classes
+     3. :root {} also declares them as CSS custom properties for any direct CSS use
+
+   After this: `bg-warm`, `text-ink`, `font-display`, `text-display-xl` etc.
+   all generate valid CSS — no inline style props needed.
+   ============================================================================= */
+
 @import "tailwindcss";
 
+/* =============================================================================
+   THEME — all tokens registered here become Tailwind utility classes
+   ============================================================================= */
+
+@theme {
+
+  /* ── Colour palette ──────────────────────────────────────────────────────── */
+
+  --color-ink:         #1a1a18;   /* Dark Ink — primary text, dark bg */
+  --color-warm:        #f5f0e8;   /* Warm White — page canvas */
+  --color-card:        #FFFFFF;   /* Card White — elevated surfaces */
+  --color-gold:        #C49A3C;   /* Old Gold — dining accent */
+  --color-apricot:     #F2A07B;   /* Apricot — culture/experience accent */
+  --color-verdigris:   #43B3AE;   /* Verdigris — outdoor/nature accent */
+
+  /* Secondary text: ink at 65% — use text-ink/65 in Tailwind v4 */
+
+  /* Dark mode surface steps */
+  --color-surface-0:   #1a1a18;
+  --color-surface-1:   #242420;
+  --color-surface-2:   #2e2e28;
+  --color-surface-3:   #3a3a32;
+
+  /* ── Typography — font families ─────────────────────────────────────────── */
+
+  --font-display:  "Freight Display", Georgia, serif;
+  --font-body:     "Söhne", "Helvetica Neue", Arial, sans-serif;
+
+  /* ── Typography — font sizes (Major Third scale from 16px base) ─────────── */
+
+  --text-display-xl:   3.5rem;     /* 56px — Hero headlines */
+  --text-display-lg:   2.75rem;    /* 44px — Article/city titles */
+  --text-display-md:   2.25rem;    /* 36px — Section headers */
+  --text-heading-lg:   1.75rem;    /* 28px — Card titles */
+  --text-heading-md:   1.375rem;   /* 22px — Subheadings */
+  --text-body-lg:      1.125rem;   /* 18px — Lead text */
+  --text-body-md:      1rem;       /* 16px — Body text */
+  --text-body-sm:      0.875rem;   /* 14px — Secondary text */
+  --text-caption:      0.75rem;    /* 12px — Metadata */
+  --text-overline:     0.6875rem;  /* 11px — Category labels */
+
+  /* ── Typography — line heights ───────────────────────────────────────────── */
+
+  --leading-display-xl:   1.1;
+  --leading-display-lg:   1.15;
+  --leading-display-md:   1.2;
+  --leading-heading-lg:   1.25;
+  --leading-heading-md:   1.3;
+  --leading-body-lg:      1.6;
+  --leading-body-md:      1.55;
+  --leading-body-sm:      1.5;
+  --leading-caption:      1.4;
+  --leading-overline:     1.35;
+
+  /* ── Typography — font weights ───────────────────────────────────────────── */
+  /* Use Tailwind's built-in font-weight utilities:
+     font-light (300), font-normal (400), font-medium (500), font-semibold (600) */
+
+  /* ── Spacing scale (8px base) ────────────────────────────────────────────── */
+
+  --spacing-px-2:    2px;
+  --spacing-px-4:    4px;
+  --spacing-px-8:    8px;
+  --spacing-px-12:   12px;
+  --spacing-px-16:   16px;
+  --spacing-px-24:   24px;
+  --spacing-px-32:   32px;
+  --spacing-px-40:   40px;
+  --spacing-px-48:   48px;
+  --spacing-px-64:   64px;
+  --spacing-px-80:   80px;
+  --spacing-px-96:   96px;
+  --spacing-px-128:  128px;
+
+  /* ── Corner radius ───────────────────────────────────────────────────────── */
+
+  --radius-none:    0px;     /* Images */
+  --radius-button:  4px;     /* Buttons, inputs */
+  --radius-card:    8px;     /* Cards */
+  --radius-modal:   12px;    /* Modals, bottom sheets */
+
+  /* ── Shadows ─────────────────────────────────────────────────────────────── */
+
+  --shadow-card-rest:  0 1px 2px rgba(26, 26, 24, 0.06);
+  --shadow-card-hover: 0 2px 8px rgba(26, 26, 24, 0.08);
+  --shadow-modal:      0 8px 32px rgba(26, 26, 24, 0.14);
+
+}
+
+/* =============================================================================
+   CSS CUSTOM PROPERTIES — mirrors @theme for direct CSS use
+   ============================================================================= */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --sonder-ink:       #1a1a18;
+  --sonder-warm:      #f5f0e8;
+  --sonder-card:      #FFFFFF;
+  --sonder-gold:      #C49A3C;
+  --sonder-apricot:   #F2A07B;
+  --sonder-verdigris: #43B3AE;
+
+  --sonder-surface-0: #1a1a18;
+  --sonder-surface-1: #242420;
+  --sonder-surface-2: #2e2e28;
+  --sonder-surface-3: #3a3a32;
+
+  --sonder-shadow-card-rest:  0 1px 2px rgba(26, 26, 24, 0.06);
+  --sonder-shadow-card-hover: 0 2px 8px rgba(26, 26, 24, 0.08);
+  --sonder-shadow-modal:      0 8px 32px rgba(26, 26, 24, 0.14);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* =============================================================================
+   BASE STYLES
+   ============================================================================= */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-warm);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: var(--text-body-md);
+  line-height: var(--leading-body-md);
+  margin: 0;
+}
+
+img,
+picture,
+video,
+canvas,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+/* =============================================================================
+   TYPOGRAPHY COMPONENT CLASSES
+   These complement the utility classes for common patterns.
+   ============================================================================= */
+
+.text-display-xl {
+  font-family: var(--font-display);
+  font-size: var(--text-display-xl);
+  font-weight: 300;
+  line-height: var(--leading-display-xl);
+}
+
+.text-display-lg {
+  font-family: var(--font-display);
+  font-size: var(--text-display-lg);
+  font-weight: 400;
+  line-height: var(--leading-display-lg);
+}
+
+.text-display-md {
+  font-family: var(--font-display);
+  font-size: var(--text-display-md);
+  font-weight: 400;
+  line-height: var(--leading-display-md);
+}
+
+.text-heading-lg {
+  font-family: var(--font-body);
+  font-size: var(--text-heading-lg);
+  font-weight: 600;
+  line-height: var(--leading-heading-lg);
+}
+
+.text-heading-md {
+  font-family: var(--font-body);
+  font-size: var(--text-heading-md);
+  font-weight: 600;
+  line-height: var(--leading-heading-md);
+}
+
+.text-body-lg {
+  font-family: var(--font-body);
+  font-size: var(--text-body-lg);
+  font-weight: 400;
+  line-height: var(--leading-body-lg);
+}
+
+.text-body-md {
+  font-family: var(--font-body);
+  font-size: var(--text-body-md);
+  font-weight: 400;
+  line-height: var(--leading-body-md);
+}
+
+.text-body-sm {
+  font-family: var(--font-body);
+  font-size: var(--text-body-sm);
+  font-weight: 400;
+  line-height: var(--leading-body-sm);
+}
+
+.text-caption {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  font-weight: 400;
+  line-height: var(--leading-caption);
+}
+
+.text-overline {
+  font-family: var(--font-body);
+  font-size: var(--text-overline);
+  font-weight: 500;
+  line-height: var(--leading-overline);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+@keyframes sonder-spin {
+  to { transform: rotate(360deg); }
 }

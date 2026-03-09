@@ -1,0 +1,349 @@
+/**
+ * handoff-types.ts
+ *
+ * Shared TypeScript contract for the itinerary builder → in-trip companion handoff.
+ *
+ * USAGE
+ * Both the itinerary builder (Phase 2) and the in-trip companion (Phase 3) import
+ * from this file. It is the single source of truth for the handoff payload shape.
+ * Any change to this file requires a coordinated update to both consumers.
+ *
+ * VERSIONING
+ * The HANDOFF_VERSION constant must be incremented whenever the shape changes.
+ * The companion checks this version on receipt and rejects payloads from
+ * incompatible builder versions.
+ *
+ * Version history:
+ * v1 — initial release
+ * v2 — added `morning_meal` slot type for café/bakery/breakfast slots
+ *
+ * Source: open-questions-audit.docx Q1 resolution
+ * References: prd-itinerary-builder-v2 (section 6.5), prd-in-trip-companion (FR-01)
+ */
+
+export const HANDOFF_VERSION = 2;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Primitive / shared types
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** ISO 8601 datetime string, e.g. "2026-06-15T09:00:00+02:00" */
+export type ISODateTimeString = string;
+
+/** ISO 8601 date string (date only), e.g. "2026-06-15" */
+export type ISODateString = string;
+
+/** Platform entry identifier — matches entries.id in the database */
+export type EntryId = string;
+
+/** Itinerary identifier */
+export type ItineraryId = string;
+
+/** User identifier */
+export type UserId = string;
+
+/** City identifier — matches cities.id in the database */
+export type CityId = string;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Slot types
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type SlotType =
+  | "morning_meal"       // café, bakery, breakfast — typically 30–45 min, 7–10am
+  | "morning_activity"
+  | "midday_meal"
+  | "afternoon_activity"
+  | "evening_meal"
+  | "evening_activity"
+  | "day_trip"
+  | "anchor";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Anchor blocks
+// User-declared pre-booked commitments (e.g. a concert, restaurant reservation)
+// that the itinerary builder schedules around.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type TimeOfDay = "morning" | "midday" | "afternoon" | "evening" | "night";
+
+export interface AnchorBlock {
+  /** Unique identifier for this anchor within the itinerary */
+  id: string;
+
+  /** The label the user gave this anchor, e.g. "Jazz concert at Harris Hall" */
+  user_label: string;
+
+  /**
+   * Day number this anchor is assigned to (1-indexed).
+   * Null if the user declared the anchor but did not assign it to a specific day
+   * (unscheduled anchor — should not appear in a finalised itinerary).
+   */
+  day_number: number | null;
+
+  /** Coarse time-of-day bucket for display and scheduling */
+  time_of_day: TimeOfDay | null;
+
+  /**
+   * Specific time if the user provided one, e.g. "19:30".
+   * Used for transit time calculation to/from adjacent slots.
+   */
+  specific_time: string | null; // "HH:MM" format, local city time
+
+  /**
+   * Free-text location hint provided by the user, e.g. "near the Old Town Square".
+   * Used to estimate transit from/to adjacent slots.
+   */
+  location_hint: string | null;
+
+  /**
+   * If the builder matched this anchor to a platform entry via fuzzy matching
+   * and the user confirmed the match, this is the matched entry's ID.
+   * Null if the anchor is external (no platform match).
+   */
+  matched_entry_id: EntryId | null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Slot entries
+// Each slot in a day plan is either a platform entry or an anchor block.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface BaseSlotEntry {
+  slot_type: SlotType;
+
+  /**
+   * Estimated transit time in minutes from the previous slot.
+   * Null for the first slot of the day (no prior slot).
+   */
+  estimated_transit_minutes_from_previous: number | null;
+}
+
+export interface EntrySlotEntry extends BaseSlotEntry {
+  slot_type: Exclude<SlotType, "anchor">;
+
+  /** Platform entry ID — used by the companion to hydrate full editorial content */
+  entry_id: EntryId;
+
+  anchor_block_ref: null;
+}
+
+export interface AnchorSlotEntry extends BaseSlotEntry {
+  slot_type: "anchor";
+
+  entry_id: null;
+
+  /** Reference to the AnchorBlock.id in the itinerary's anchor_blocks array */
+  anchor_block_ref: string;
+}
+
+export type SlotEntry = EntrySlotEntry | AnchorSlotEntry;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Day structure
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ItineraryDay {
+  /** 1-indexed day number */
+  day_number: number;
+
+  /** Calendar date for this day, derived from the user's arrival date */
+  date: ISODateString;
+
+  /**
+   * Human-readable day label generated by the itinerary builder,
+   * e.g. "Day 2 — the old quarter". Used directly in the companion day view.
+   */
+  label: string;
+
+  /**
+   * Primary neighbourhood(s) for this day, e.g. ["Kazimierz"] or
+   * ["Old Town", "Kazimierz"] for a multi-neighbourhood day.
+   * Used in the companion day view header.
+   */
+  neighbourhoods: string[];
+
+  /**
+   * True if this day spans non-adjacent neighbourhoods and involves
+   * above-average transit. The companion surfaces a transit warning.
+   */
+  is_high_transit_day: boolean;
+
+  /**
+   * True if this is a limited day (fractional day — arrival or departure).
+   * The companion adjusts the day view to show available hours only.
+   */
+  is_limited_day: boolean;
+
+  /**
+   * For limited days: the hour from which activities are available (arrival day)
+   * or the hour by which activities must end (departure day). Local city time.
+   * Null for full days.
+   */
+  limited_day_from_hour: number | null; // 0–23
+  limited_day_until_hour: number | null; // 0–23
+
+  /** Ordered sequence of slots for this day */
+  slots: SlotEntry[];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Entry metadata cache hint
+// Minimal entry data included in the handoff to allow the companion to display
+// names and categories before the full offline cache is loaded.
+// The companion must hydrate full editorial content from its local cache
+// (pre-trip download) using entry_id as the lookup key.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface EntryMetaHint {
+  entry_id: EntryId;
+
+  /** Display name, e.g. "Café Szafe" */
+  name: string;
+
+  /** Top-level category, e.g. "restaurant" | "activity" | "accommodation" */
+  category: string;
+
+  /** Neighbourhood, e.g. "Kazimierz" */
+  neighbourhood: string;
+
+  /**
+   * Approximate latitude/longitude for the companion map view.
+   * Used before full map tile cache is available.
+   */
+  lat: number;
+  lng: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Root handoff payload
+// Written by the itinerary builder on finalisation (FR-19).
+// Read by the companion on first load (FR-01).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CompanionHandoffPayload {
+  /**
+   * Must match HANDOFF_VERSION. The companion rejects payloads where
+   * this does not match its expected version.
+   */
+  version: number;
+
+  itinerary_id: ItineraryId;
+  user_id: UserId;
+  city_id: CityId;
+
+  /** ISO datetime of when the itinerary was finalised */
+  finalised_at: ISODateTimeString;
+
+  /** ISO datetime of most recent edit (equals finalised_at if never edited post-finalisation) */
+  last_updated_at: ISODateTimeString;
+
+  /** Total number of trip days */
+  total_days: number;
+
+  /** Ordered array of day plans */
+  days: ItineraryDay[];
+
+  /**
+   * All anchor blocks declared in the itinerary, including any that are
+   * unscheduled (day_number: null). Unscheduled anchors are shown in the
+   * companion as a reminder to the user to place them manually.
+   */
+  anchor_blocks: AnchorBlock[];
+
+  /**
+   * Metadata hints for all entry_ids referenced in the day slots.
+   * Keyed by entry_id for O(1) lookup.
+   * Allows the companion to render entry names and map pins before the
+   * full offline cache download completes.
+   */
+  entry_meta: Record<EntryId, EntryMetaHint>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Companion itinerary state
+// The companion maintains its own mutable copy of the itinerary during the trip.
+// Changes made through the companion (replan, weather swaps) are applied to this
+// state and written back to the server when connectivity is available.
+// This type extends the handoff payload with in-trip state tracking.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type SlotVisitStatus = "planned" | "visited" | "skipped" | "swapped";
+
+export interface CompanionSlotState {
+  /** Mirrors the SlotEntry from the handoff */
+  slot: SlotEntry;
+
+  visit_status: SlotVisitStatus;
+
+  /**
+   * If slot_status is "swapped", this holds the replacement entry.
+   * The original slot entry is retained for display ("originally planned: X").
+   */
+  swapped_to: EntrySlotEntry | null;
+
+  /**
+   * ISO datetime of when the user arrived at/checked in to this slot.
+   * Set by dwell-time inference or manual check-in.
+   */
+  arrived_at: ISODateTimeString | null;
+
+  /**
+   * ISO datetime of when the post-activity signal fired for this slot.
+   * Used to open the next nudge eligibility window.
+   */
+  activity_completed_at: ISODateTimeString | null;
+}
+
+export interface CompanionDayState {
+  day_number: number;
+  date: ISODateString;
+  label: string;
+  neighbourhoods: string[];
+  is_high_transit_day: boolean;
+  is_limited_day: boolean;
+  limited_day_from_hour: number | null;
+  limited_day_until_hour: number | null;
+  slots: CompanionSlotState[];
+
+  /** True if the user has submitted a Day-in-Review for this day */
+  day_in_review_submitted: boolean;
+}
+
+export interface CompanionItineraryState {
+  version: number;
+  itinerary_id: ItineraryId;
+  user_id: UserId;
+  city_id: CityId;
+  finalised_at: ISODateTimeString;
+  last_updated_at: ISODateTimeString;
+  total_days: number;
+  days: CompanionDayState[];
+  anchor_blocks: AnchorBlock[];
+  entry_meta: Record<EntryId, EntryMetaHint>;
+
+  /**
+   * ISO datetime of last sync to server.
+   * Null if the state has never been synced (e.g. created offline).
+   */
+  last_synced_at: ISODateTimeString | null;
+
+  /** True if there are local changes not yet synced to the server */
+  has_unsynced_changes: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Type guards
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function isEntrySlot(slot: SlotEntry): slot is EntrySlotEntry {
+  return slot.entry_id !== null;
+}
+
+export function isAnchorSlot(slot: SlotEntry): slot is AnchorSlotEntry {
+  return slot.slot_type === "anchor";
+}
+
+export function isValidHandoffVersion(payload: CompanionHandoffPayload): boolean {
+  return payload.version === HANDOFF_VERSION;
+}

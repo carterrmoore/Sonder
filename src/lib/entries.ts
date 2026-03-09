@@ -13,7 +13,7 @@ import type { Category } from "@/types/pipeline";
 /** Subset of the full entry — only what the card needs. */
 export interface EntryCardData {
   id: string;
-  slug: string;
+  slug: string | null;
   name: string;
   category: Category;
   neighbourhood: string | null;
@@ -112,81 +112,97 @@ export async function getApprovedEntries(
   }));
 }
 
-/**
- * Fetch a single full entry by slug for the detail page.
- * Returns null if not found or not approved.
- */
-export async function getEntryBySlug(
-  slug: string
-): Promise<EntryFull | null> {
-  const supabase = await createClient();
+const DETAIL_SELECT = `
+  id,
+  slug,
+  name,
+  category,
+  address,
+  editorial_hook,
+  editorial_rationale,
+  editorial_writeup,
+  photos,
+  price_level,
+  tags,
+  maps_url,
+  insider_tip,
+  what_to_order,
+  why_it_made_the_cut,
+  neighbourhoods ( display_name )
+`;
 
-  const { data, error } = await supabase
-    .from("entries")
-    .select(
-      `
-      id,
-      slug,
-      name,
-      category,
-      address,
-      editorial_hook,
-      editorial_rationale,
-      editorial_writeup,
-      photos,
-      price_level,
-      tags,
-      maps_url,
-      insider_tip,
-      what_to_order,
-      why_it_made_the_cut,
-      neighbourhoods ( display_name )
-    `
-    )
-    .eq("slug", slug)
-    .eq("review_status", "approved")
-    .single();
-
-  if (error || !data) return null;
-
+function rowToEntryFull(data: Record<string, unknown>): EntryFull {
   return {
-    id: data.id,
-    slug: data.slug,
-    name: data.name,
+    id: data.id as string,
+    slug: data.slug as string,
+    name: data.name as string,
     category: data.category as Category,
-    address: data.address,
+    address: (data.address as string) ?? null,
     neighbourhood: extractNeighbourhood(data.neighbourhoods),
-    editorial_hook: data.editorial_hook,
-    editorial_rationale: data.editorial_rationale,
-    editorial_writeup: data.editorial_writeup,
-    photos: data.photos,
-    price_level: data.price_level,
-    tags: data.tags,
-    maps_url: data.maps_url,
-    insider_tip: data.insider_tip,
-    what_to_order: data.what_to_order,
-    why_it_made_the_cut: data.why_it_made_the_cut,
+    editorial_hook: data.editorial_hook as string,
+    editorial_rationale: (data.editorial_rationale as string) ?? null,
+    editorial_writeup: (data.editorial_writeup as string) ?? null,
+    photos: (data.photos as string[]) ?? null,
+    price_level: (data.price_level as number) ?? null,
+    tags: (data.tags as string[]) ?? null,
+    maps_url: (data.maps_url as string) ?? null,
+    insider_tip: (data.insider_tip as string) ?? null,
+    what_to_order: (data.what_to_order as string) ?? null,
+    why_it_made_the_cut: (data.why_it_made_the_cut as string) ?? null,
   };
 }
 
 /**
- * Fetch all approved slugs for a city — used by generateStaticParams.
+ * Fetch a single full entry by slug (or id as fallback) for the detail page.
+ * Returns null if not found. No status filter during dev.
+ */
+export async function getEntryBySlug(
+  slugOrId: string
+): Promise<EntryFull | null> {
+  const { createClient: createDirectClient } = await import("@supabase/supabase-js");
+  const supabase = createDirectClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+
+  // Try slug first — no status filter for dev
+  const { data: bySlug } = await supabase
+    .from("entries")
+    .select("*")
+    .eq("slug", slugOrId)
+    .maybeSingle();
+
+  if (bySlug) return rowToEntryFull(bySlug);
+
+  // Fall back to id
+  const { data: byId } = await supabase
+    .from("entries")
+    .select("*")
+    .eq("id", slugOrId)
+    .maybeSingle();
+
+  return byId ? rowToEntryFull(byId) : null;
+}
+
+/**
+ * Fetch all approved slug/id pairs for a city — used by generateStaticParams.
+ * Uses a direct anon client (no cookies) because this runs at build time.
+ * Falls back to id when slug is null (seed entries).
  */
 export async function getApprovedSlugs(
   cityId: string
 ): Promise<string[]> {
-  const supabase = await createClient();
+  const { createClient: createAnonClient } = await import("@supabase/supabase-js");
+  const supabase = createAnonClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
 
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from("entries")
-    .select("slug")
+    .select("slug, id")
     .eq("city_id", cityId)
     .eq("review_status", "approved");
 
-  if (error) {
-    console.error("getApprovedSlugs error:", error);
-    return [];
-  }
-
-  return (data ?? []).map((row) => row.slug as string);
+  return (data ?? []).map((row) => (row.slug ?? row.id) as string);
 }
