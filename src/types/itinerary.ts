@@ -33,3 +33,6 @@ export interface SlotEntrySnapshot {
   slug: string | null;
   citySlug: string;
 }
+
+/** Set when the user clicks "Save itinerary" on the summary screen */
+export type FinalisedItinerary = Itinerary & { finalised: true };

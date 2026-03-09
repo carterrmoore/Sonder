@@ -1,23 +1,24 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import type { Itinerary, ItineraryDay, ItinerarySlot, TimeBlock } from "@/types/itinerary";
+import type { Itinerary, ItinerarySlot, TimeBlock } from "@/types/itinerary";
 import type { EntryCardData } from "@/lib/entries";
+import type { ScoredEntry } from "@/lib/preference-filter";
+import { generateDays } from "@/lib/day-generator";
 
 function storageKey(citySlug: string): string {
   return `sonder_itinerary_${citySlug}`;
 }
 
-function buildDays(tripLength: number, arrival: string | null): ItineraryDay[] {
-  return Array.from({ length: tripLength }, (_, i) => {
-    let date: string | null = null;
-    if (arrival) {
-      const d = new Date(arrival);
-      d.setDate(d.getDate() + i);
-      date = d.toISOString().slice(0, 10);
-    }
-    return { dayNumber: i + 1, date, slots: [] };
-  });
+function makeSnapshot(entry: EntryCardData, citySlug: string): ItinerarySlot["entrySnapshot"] {
+  return {
+    name: entry.name,
+    category: entry.category,
+    neighbourhood: entry.neighbourhood,
+    editorial_hook: entry.editorial_hook,
+    slug: entry.slug,
+    citySlug,
+  };
 }
 
 export function useItinerary(citySlug: string) {
@@ -40,7 +41,7 @@ export function useItinerary(citySlug: string) {
   }, [citySlug, itinerary]);
 
   const initItinerary = useCallback(
-    (tripLength: number, arrival: string | null) => {
+    (tripLength: number, arrival: string | null, scoredEntries: ScoredEntry[]) => {
       const now = new Date().toISOString();
       const next: Itinerary = {
         id: crypto.randomUUID(),
@@ -48,7 +49,7 @@ export function useItinerary(citySlug: string) {
         createdAt: now,
         updatedAt: now,
         tripLength,
-        days: buildDays(tripLength, arrival),
+        days: generateDays(tripLength, arrival, scoredEntries, citySlug),
       };
       setItinerary(next);
     },
@@ -70,14 +71,7 @@ export function useItinerary(citySlug: string) {
           entryId: entry.id,
           timeBlock,
           notes: null,
-          entrySnapshot: {
-            name: entry.name,
-            category: entry.category,
-            neighbourhood: entry.neighbourhood,
-            editorial_hook: entry.editorial_hook,
-            slug: entry.slug,
-            citySlug,
-          },
+          entrySnapshot: makeSnapshot(entry, citySlug),
         };
 
         return {
@@ -107,6 +101,31 @@ export function useItinerary(citySlug: string) {
       };
     });
   }, []);
+
+  const swapEntry = useCallback(
+    (slotId: string, newEntry: EntryCardData) => {
+      setItinerary((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          updatedAt: new Date().toISOString(),
+          days: prev.days.map((d) => ({
+            ...d,
+            slots: d.slots.map((s) =>
+              s.id === slotId
+                ? {
+                    ...s,
+                    entryId: newEntry.id,
+                    entrySnapshot: makeSnapshot(newEntry, citySlug),
+                  }
+                : s
+            ),
+          })),
+        };
+      });
+    },
+    [citySlug]
+  );
 
   const moveEntry = useCallback(
     (slotId: string, toDayNumber: number, toTimeBlock: TimeBlock) => {
@@ -140,6 +159,17 @@ export function useItinerary(citySlug: string) {
     []
   );
 
+  const finaliseItinerary = useCallback(() => {
+    setItinerary((prev) => {
+      if (!prev) return prev;
+      const finalised = { ...prev, finalised: true, updatedAt: new Date().toISOString() };
+      try {
+        localStorage.setItem(storageKey(citySlug), JSON.stringify(finalised));
+      } catch {}
+      return finalised;
+    });
+  }, [citySlug]);
+
   const clearItinerary = useCallback(() => {
     try {
       localStorage.removeItem(storageKey(citySlug));
@@ -147,5 +177,14 @@ export function useItinerary(citySlug: string) {
     setItinerary(null);
   }, [citySlug]);
 
-  return { itinerary, initItinerary, addEntry, removeEntry, moveEntry, clearItinerary };
+  return {
+    itinerary,
+    initItinerary,
+    addEntry,
+    removeEntry,
+    swapEntry,
+    moveEntry,
+    finaliseItinerary,
+    clearItinerary,
+  };
 }
