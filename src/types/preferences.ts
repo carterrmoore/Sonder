@@ -194,7 +194,43 @@ export interface CityPreference {
  * Global preferences (Q3, Q5, Q6) apply identically across all cities in the trip.
  * Per-city preferences (Q1, Q2, Q4) are inside each CityPreference object.
  */
+// ─────────────────────────────────────────────────────────────────────────────
+// Questionnaire types — preference layer onboarding flow (Phase 2 UI)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type Interest =
+  | "food_drink"
+  | "architecture_history"
+  | "art_culture"
+  | "outdoor_active"
+  | "nightlife"
+  | "hidden_gems";
+
+/**
+ * The output of the 6-question onboarding questionnaire.
+ * Persisted to localStorage under key `sonder_preferences_[citySlug]`.
+ * Will be mapped to ItineraryPreferences when the itinerary builder is built.
+ */
 export interface TripPreferences {
+  citySlug: string;
+  /** ISO date string (YYYY-MM-DD), null when datesFlexible = true */
+  arrival: string | null;
+  /** ISO date string (YYYY-MM-DD), null when datesFlexible = true */
+  departure: string | null;
+  datesFlexible: boolean;
+  groupSize: "solo" | "couple" | "small_group" | "larger_group";
+  pace: "relaxed" | "balanced" | "packed";
+  /** At least 1 required */
+  interests: Interest[];
+  accommodationStyle: "budget" | "mid_range" | "upscale" | "sorted";
+  tripStyle: "wander" | "mixed" | "planned";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Itinerary builder preferences — full preference session (Phase 2 pipeline)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ItineraryPreferences {
   /** Matches preference_sessions.id in the database */
   id: string;
 

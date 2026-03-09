@@ -101,6 +101,28 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
             {entries.length} places worth your time. No tourist traps. No paid
             placements. Chosen by people who live here.
           </p>
+
+          {/* Plan CTA */}
+          <a
+            href="/krakow/plan"
+            style={{
+              display: "inline-block",
+              marginTop: "var(--spacing-px-24)",
+              fontFamily: "var(--font-body)",
+              fontWeight: 600,
+              fontSize: "var(--text-body-md)",
+              backgroundColor: "var(--color-gold)",
+              color: "var(--color-ink)",
+              border: "none",
+              borderRadius: "var(--radius-button)",
+              padding: "var(--spacing-px-16) var(--spacing-px-32)",
+              cursor: "pointer",
+              textDecoration: "none",
+              transition: "opacity 0.15s ease",
+            }}
+          >
+            Plan my trip →
+          </a>
         </Container>
       </div>
 
