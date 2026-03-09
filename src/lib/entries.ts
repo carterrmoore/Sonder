@@ -3,8 +3,15 @@
  * Server-side only. Do NOT add "use client".
  */
 
-import { createClient } from "@/lib/supabase/server";
+import { createClient as createAnonClient } from "@supabase/supabase-js";
 import type { Category } from "@/types/pipeline";
+
+function getAnonClient() {
+  return createAnonClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared types
@@ -60,76 +67,33 @@ function extractNeighbourhood(raw: unknown): string | null {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Fetch all approved entries for a city, ordered by gate2_score DESC.
- * Optionally filter by category.
+ * Fetch all visible entries for a city.
+ * RLS enforces visibility — no status filter needed in the query.
  */
 export async function getApprovedEntries(
-  cityId: string,
-  category?: Category
+  cityId: string
 ): Promise<EntryCardData[]> {
-  const supabase = await createClient();
+  const supabase = getAnonClient();
 
-  let query = supabase
+  const { data } = await supabase
     .from("entries")
-    .select(
-      `
-      id,
-      slug,
-      name,
-      category,
-      editorial_hook,
-      photos,
-      price_level,
-      tags,
-      neighbourhoods ( display_name )
-    `
-    )
+    .select("id, slug, name, category, neighbourhood_id, editorial_hook, photos, price_level, tags")
     .eq("city_id", cityId)
-    .eq("review_status", "approved")
-    .order("gate2_score", { ascending: false });
-
-  if (category) {
-    query = query.eq("category", category);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.error("getApprovedEntries error:", error);
-    return [];
-  }
+    .order("name");
 
   return (data ?? []).map((row) => ({
     id: row.id,
-    slug: row.slug,
+    slug: row.slug ?? null,
     name: row.name,
     category: row.category as Category,
-    neighbourhood: extractNeighbourhood(row.neighbourhoods),
+    neighbourhood: null,
     editorial_hook: row.editorial_hook,
-    photos: row.photos,
-    price_level: row.price_level,
-    tags: row.tags,
+    photos: row.photos ?? null,
+    price_level: row.price_level ?? null,
+    tags: row.tags ?? null,
   }));
 }
 
-const DETAIL_SELECT = `
-  id,
-  slug,
-  name,
-  category,
-  address,
-  editorial_hook,
-  editorial_rationale,
-  editorial_writeup,
-  photos,
-  price_level,
-  tags,
-  maps_url,
-  insider_tip,
-  what_to_order,
-  why_it_made_the_cut,
-  neighbourhoods ( display_name )
-`;
 
 function rowToEntryFull(data: Record<string, unknown>): EntryFull {
   return {
@@ -159,11 +123,7 @@ function rowToEntryFull(data: Record<string, unknown>): EntryFull {
 export async function getEntryBySlug(
   slugOrId: string
 ): Promise<EntryFull | null> {
-  const { createClient: createDirectClient } = await import("@supabase/supabase-js");
-  const supabase = createDirectClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  const supabase = getAnonClient();
 
   // Try slug first — no status filter for dev
   const { data: bySlug } = await supabase
@@ -192,17 +152,12 @@ export async function getEntryBySlug(
 export async function getApprovedSlugs(
   cityId: string
 ): Promise<string[]> {
-  const { createClient: createAnonClient } = await import("@supabase/supabase-js");
-  const supabase = createAnonClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  const supabase = getAnonClient();
 
   const { data } = await supabase
     .from("entries")
     .select("slug, id")
-    .eq("city_id", cityId)
-    .eq("review_status", "approved");
+    .eq("city_id", cityId);
 
   return (data ?? []).map((row) => (row.slug ?? row.id) as string);
 }
