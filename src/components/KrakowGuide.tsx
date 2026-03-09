@@ -28,11 +28,22 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
   const [selectedCategory, setSelectedCategory] = useState<Category | "all">("all");
   const [preferences, setPreferences] = useState<TripPreferences | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [hasItinerary, setHasItinerary] = useState(false);
 
   useEffect(() => {
     try {
       const stored = localStorage.getItem("sonder_preferences_krakow");
       if (stored) setPreferences(JSON.parse(stored) as TripPreferences);
+    } catch {}
+    try {
+      const raw = localStorage.getItem("sonder_itinerary_krakow");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const hasSlots = parsed?.days?.some(
+          (d: { slots: unknown[] }) => d.slots.length > 0
+        );
+        setHasItinerary(!!hasSlots);
+      }
     } catch {}
   }, []);
 
@@ -118,27 +129,57 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
             placements. Chosen by people who live here.
           </p>
 
-          {/* Plan CTA */}
-          <a
-            href="/krakow/plan"
+          {/* CTA row */}
+          <div
             style={{
-              display: "inline-block",
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--spacing-px-12)",
+              flexWrap: "wrap",
               marginTop: "var(--spacing-px-24)",
-              fontFamily: "var(--font-body)",
-              fontWeight: 600,
-              fontSize: "var(--text-body-md)",
-              backgroundColor: "var(--color-gold)",
-              color: "var(--color-ink)",
-              border: "none",
-              borderRadius: "var(--radius-button)",
-              padding: "var(--spacing-px-16) var(--spacing-px-32)",
-              cursor: "pointer",
-              textDecoration: "none",
-              transition: "opacity 0.15s ease",
             }}
           >
-            Plan my trip →
-          </a>
+            <a
+              href="/krakow/plan"
+              style={{
+                display: "inline-block",
+                fontFamily: "var(--font-body)",
+                fontWeight: 600,
+                fontSize: "var(--text-body-md)",
+                backgroundColor: "var(--color-gold)",
+                color: "var(--color-ink)",
+                border: "none",
+                borderRadius: "var(--radius-button)",
+                padding: "var(--spacing-px-16) var(--spacing-px-32)",
+                cursor: "pointer",
+                textDecoration: "none",
+                transition: "opacity 0.15s ease",
+              }}
+            >
+              Plan my trip →
+            </a>
+            {hasItinerary && (
+              <a
+                href="/krakow/itinerary"
+                style={{
+                  display: "inline-block",
+                  fontFamily: "var(--font-body)",
+                  fontWeight: 600,
+                  fontSize: "var(--text-body-md)",
+                  backgroundColor: "transparent",
+                  color: "var(--color-warm)",
+                  border: "1px solid rgba(245, 240, 232, 0.35)",
+                  borderRadius: "var(--radius-button)",
+                  padding: "var(--spacing-px-16) var(--spacing-px-32)",
+                  cursor: "pointer",
+                  textDecoration: "none",
+                  transition: "border-color 0.15s ease",
+                }}
+              >
+                View itinerary
+              </a>
+            )}
+          </div>
         </Container>
       </div>
 
