@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Container from "@/components/ui/Container";
 import Grid from "@/components/ui/Grid";
 import SectionSpacer from "@/components/ui/SectionSpacer";
@@ -8,6 +8,8 @@ import EntryCard from "@/components/EntryCard";
 import { CATEGORY_DISPLAY } from "@/pipeline/constants";
 import type { EntryCardData } from "@/lib/entries";
 import type { Category } from "@/types/pipeline";
+import type { TripPreferences } from "@/types/preferences";
+import { applyPreferences } from "@/lib/preference-filter";
 
 const CATEGORY_PLURAL: Record<Category, string> = {
   restaurant:    "Restaurants",
@@ -24,6 +26,20 @@ interface KrakowGuideProps {
 
 export default function KrakowGuide({ entries }: KrakowGuideProps) {
   const [selectedCategory, setSelectedCategory] = useState<Category | "all">("all");
+  const [preferences, setPreferences] = useState<TripPreferences | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("sonder_preferences_krakow");
+      if (stored) setPreferences(JSON.parse(stored) as TripPreferences);
+    } catch {}
+  }, []);
+
+  const scoredEntries = useMemo(
+    () => applyPreferences(entries, preferences),
+    [entries, preferences]
+  );
 
   const categories = [
     "all" as const,
@@ -32,8 +48,8 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
 
   const filtered =
     selectedCategory === "all"
-      ? entries
-      : entries.filter((e) => e.category === selectedCategory);
+      ? scoredEntries
+      : scoredEntries.filter((se) => se.entry.category === selectedCategory);
 
   const sectionTitle =
     selectedCategory === "all"
@@ -187,6 +203,64 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
         </Container>
       </div>
 
+      {/* ── Personalisation banner ────────────────────────────────────────── */}
+      {preferences && !bannerDismissed && (
+        <Container>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginTop: "var(--spacing-px-16)",
+              padding: "var(--spacing-px-12) var(--spacing-px-16)",
+              backgroundColor: "color-mix(in srgb, var(--color-gold) 8%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--color-gold) 25%, transparent)",
+              borderRadius: "var(--radius-button)",
+            }}
+          >
+            <p
+              style={{
+                fontFamily: "var(--font-body)",
+                fontSize: "var(--text-caption)",
+                lineHeight: "var(--leading-caption)",
+                color: "var(--color-ink)",
+                margin: 0,
+              }}
+            >
+              Showing results for your trip &middot;{" "}
+              <a
+                href="/krakow/plan"
+                style={{
+                  color: "var(--color-ink)",
+                  fontWeight: 600,
+                  textDecoration: "none",
+                }}
+              >
+                Adjust →
+              </a>
+            </p>
+            <button
+              type="button"
+              onClick={() => setBannerDismissed(true)}
+              aria-label="Dismiss personalisation banner"
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontFamily: "var(--font-body)",
+                fontSize: "var(--text-caption)",
+                color: "var(--color-ink)",
+                opacity: 0.5,
+                padding: "0 0 0 var(--spacing-px-12)",
+                lineHeight: 1,
+              }}
+            >
+              ×
+            </button>
+          </div>
+        </Container>
+      )}
+
       {/* ── Section header ─────────────────────────────────────────────────── */}
       <Container>
         <SectionSpacer size="md" />
@@ -235,8 +309,8 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
           </Container>
         ) : (
           <Grid>
-            {filtered.map((entry) => (
-              <EntryCard key={entry.id} entry={entry} citySlug="krakow" />
+            {filtered.map((se) => (
+              <EntryCard key={se.entry.id} entry={se.entry} citySlug="krakow" />
             ))}
           </Grid>
         )}
