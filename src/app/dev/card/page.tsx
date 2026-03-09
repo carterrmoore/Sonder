@@ -35,7 +35,7 @@ async function getSeedEntries(): Promise<SeedEntry[]> {
     process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  // nomination_note lives inside raw_pipeline_data JSONB — filter via ->>
+  // All 10 seed entries have review_status = 'approved'; no other approved entries exist yet
   const { data, error } = await supabase
     .from("entries")
     .select(`
@@ -44,7 +44,7 @@ async function getSeedEntries(): Promise<SeedEntry[]> {
       photo_curator_rejected_all, tags, insider_tip,
       neighbourhood:neighbourhood_id ( display_name )
     `)
-    .filter("raw_pipeline_data->>'nomination_note'", "eq", "SEED_DATA_DELETE_AFTER_PIPELINE_RERUN")
+    .eq("review_status", "approved")
     .limit(10);
 
   if (error) {
