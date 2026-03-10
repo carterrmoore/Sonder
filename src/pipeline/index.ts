@@ -64,6 +64,7 @@ function getServiceClient() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface PipelineRunSummary {
+  run_id: string;
   city_id: string;
   category: Category;
   pipeline_version: number;
@@ -77,6 +78,7 @@ export interface PipelineRunSummary {
   candidates_pretriage_rejected: number;
   candidates_early_trap_rejected: number;
   candidates_entering_gate0: number;
+  viator_enrichment_lookups: number;
   // Gate results
   gate0_verified_open: number;
   gate0_likely_open: number;
@@ -85,6 +87,8 @@ export interface PipelineRunSummary {
   gate1_passed: number;
   gate1_borderline: number;
   gate1_rejected: number;
+  gate1_entered: number;
+  gate2_entered: number;
   gate2_passed: number;
   gate2_soul_exceptions: number;
   gate2_rejected: number;
@@ -152,10 +156,14 @@ function calculateEstimatedCosts(stats: RunStats): {
   const GMAPS_TEXT_SEARCH_COST = 0.032;
   const GMAPS_PLACE_DETAILS_COST = 0.017;
   const APIFY_COST = 0.05;
+  const VIATOR_ENRICHMENT_LOOKUP_COST = 0.005; // $0.005 per Text Search call for coordinate enrichment
 
-  const gate1Candidates = stats.gate1_passed + stats.gate1_borderline + stats.gate1_rejected;
-  const gate2Candidates = stats.gate2_passed + stats.gate2_soul_exceptions + stats.gate2_rejected;
+  const gate1Candidates = stats.gate1_entered ??
+    (stats.gate1_passed + stats.gate1_borderline + stats.gate1_rejected);
+  const gate2Candidates = stats.gate2_entered ??
+    (stats.gate2_passed + stats.gate2_soul_exceptions + stats.gate2_rejected);
   const apifyCandidates = gate2Candidates; // Apify runs post-Gate 1 for candidates entering Gate 2
+  const viatorEnrichmentCost = (stats.viator_enrichment_lookups ?? 0) * VIATOR_ENRICHMENT_LOOKUP_COST;
 
   const claudeCost =
     gate1Candidates * GATE1_COST +
@@ -167,7 +175,8 @@ function calculateEstimatedCosts(stats: RunStats): {
     claudeCost +
     stats.candidates_entering_gate0 * GMAPS_PLACE_DETAILS_COST +
     stats.candidates_discovered * GMAPS_TEXT_SEARCH_COST * 0.1 + // amortized across ~10 results per query
-    apifyCandidates * APIFY_COST;
+    apifyCandidates * APIFY_COST +
+    viatorEnrichmentCost;
 
   // Savings: candidates rejected at Gate 0 or Gate 1 that didn't consume Gate 2 + Stage 4 tokens
   const rejectedBeforeGate2 = stats.gate0_rejected + stats.gate1_rejected;
@@ -183,7 +192,7 @@ function calculateEstimatedCosts(stats: RunStats): {
 /** Internal accumulator — mutated as the run progresses, returned at the end. */
 type RunStats = Omit<
   PipelineRunSummary,
-  "city_id" | "category" | "pipeline_version" | "started_at" | "completed_at" | "runtime_seconds"
+  "run_id" | "city_id" | "category" | "pipeline_version" | "started_at" | "completed_at" | "runtime_seconds"
 >;
 
 function initialStats(): RunStats {
@@ -193,6 +202,7 @@ function initialStats(): RunStats {
     candidates_pretriage_rejected: 0,
     candidates_early_trap_rejected: 0,
     candidates_entering_gate0: 0,
+    viator_enrichment_lookups: 0,
     gate0_verified_open: 0,
     gate0_likely_open: 0,
     gate0_rejected: 0,
@@ -200,6 +210,8 @@ function initialStats(): RunStats {
     gate1_passed: 0,
     gate1_borderline: 0,
     gate1_rejected: 0,
+    gate1_entered: 0,
+    gate2_entered: 0,
     gate2_passed: 0,
     gate2_soul_exceptions: 0,
     gate2_rejected: 0,
@@ -723,7 +735,11 @@ export async function processCandidate(
       log(`Stage 3 closure discovered (${stage3Result.closure_evidence}) — stopping`);
       await supabase
         .from("pipeline_candidates")
-        .update({ processing_status: "rejected" })
+        .update({
+          processing_status: "rejected",
+          failure_stage: "stage3",
+          failure_reason: "Stage 3 rejected: closure discovered",
+        })
         .eq("id", candidateId);
 
       return {
@@ -940,6 +956,7 @@ export async function runPipeline(
   const { testMode = false, maxCandidates = 10 } = options;
   const supabase = getServiceClient();
   const startedAt = new Date();
+  const runId = crypto.randomUUID();
   const stats = initialStats();
 
   console.log(`[runPipeline] Starting: city=${cityId}, category=${category}`);
@@ -999,6 +1016,24 @@ const { data: city, error: cityError } = await supabase
     console.log(
       `[resume] ${candidatesToProcess.length} queued candidates to process`
     );
+
+    // Populate Stage 1 stats from existing DB records so cost estimation works on resume runs
+    const { count: resumeDiscovered } = await supabase
+      .from("pipeline_candidates")
+      .select("*", { count: "exact", head: true })
+      .eq("city_id", cityId)
+      .eq("category", category)
+      .neq("processing_status", "failed");
+
+    const { count: resumeEnteredGate0 } = await supabase
+      .from("pipeline_candidates")
+      .select("*", { count: "exact", head: true })
+      .eq("city_id", cityId)
+      .eq("category", category)
+      .not("gate0_result", "is", null);
+
+    stats.candidates_discovered = resumeDiscovered ?? 0;
+    stats.candidates_entering_gate0 = resumeEnteredGate0 ?? 0;
   } else {
     // ── Fresh run: execute Stage 1 candidate discovery ─────────────────────
     console.log(`[runPipeline] Stage 1: candidate discovery`);
@@ -1011,6 +1046,7 @@ const { data: city, error: cityError } = await supabase
       stats.candidates_pretriage_rejected = stage1Result.pretriageRejected;
       stats.candidates_early_trap_rejected = stage1Result.earlyTrapRejected;
       stats.candidates_entering_gate0 = stage1Result.enteringGate0;
+      stats.viator_enrichment_lookups = stage1Result.viatorEnrichmentLookups ?? 0;
 
       console.log(
         `[runPipeline] Stage 1 complete: ${stage1Result.discovered} discovered, ` +
@@ -1100,6 +1136,7 @@ await flushGate2Batch();
   stats.estimated_savings_usd = costs.savings;
 
   const summary: PipelineRunSummary = {
+    run_id: runId,
     city_id: cityId,
     category,
     pipeline_version: PIPELINE_VERSION,
@@ -1115,6 +1152,59 @@ await flushGate2Batch();
     `(Q1: ${stats.entries_queued_q1}, Q2: ${stats.entries_queued_q2}, Q3: ${stats.entries_queued_q3}). ` +
     `${stats.candidates_failed} permanent failures.`
   );
+
+  // Persist run summary — non-blocking, failure never throws
+  supabase
+    .from("pipeline_runs")
+    .insert({
+      id:                              runId,
+      city_id:                         cityId,
+      category:                        category,
+      pipeline_version:                summary.pipeline_version,
+      started_at:                      summary.started_at,
+      completed_at:                    summary.completed_at,
+      runtime_seconds:                 summary.runtime_seconds,
+      candidates_discovered:           summary.candidates_discovered,
+      candidates_deduplicated:         summary.candidates_deduplicated,
+      candidates_pretriage_rejected:   summary.candidates_pretriage_rejected,
+      candidates_early_trap_rejected:  summary.candidates_early_trap_rejected,
+      candidates_entering_gate0:       summary.candidates_entering_gate0,
+      viator_enrichment_lookups:       summary.viator_enrichment_lookups,
+      gate0_verified_open:             summary.gate0_verified_open,
+      gate0_likely_open:               summary.gate0_likely_open,
+      gate0_rejected:                  summary.gate0_rejected,
+      gate0_pre_filter_triage:         summary.gate0_pre_filter_triage,
+      gate1_entered:                   summary.gate1_entered,
+      gate1_passed:                    summary.gate1_passed,
+      gate1_borderline:                summary.gate1_borderline,
+      gate1_rejected:                  summary.gate1_rejected,
+      gate2_entered:                   summary.gate2_entered,
+      gate2_passed:                    summary.gate2_passed,
+      gate2_soul_exceptions:           summary.gate2_soul_exceptions,
+      gate2_rejected:                  summary.gate2_rejected,
+      stage3_closure_discovered:       summary.stage3_closure_discovered,
+      stage3_tripadvisor_disconnect:   summary.stage3_tripadvisor_disconnect,
+      entries_promoted:                summary.entries_promoted,
+      entries_queued_q1:               summary.entries_queued_q1,
+      entries_queued_q2:               summary.entries_queued_q2,
+      entries_queued_q3:               summary.entries_queued_q3,
+      editorial_full:                  summary.editorial_full,
+      editorial_minimal:               summary.editorial_minimal,
+      seasonal_scores_rule_computed:   summary.seasonal_scores_rule_computed,
+      seasonal_scores_claude_computed: summary.seasonal_scores_claude_computed,
+      candidates_failed:               summary.candidates_failed,
+      candidates_pending_retry:        summary.candidates_pending_retry,
+      estimated_api_cost_usd:          summary.estimated_api_cost_usd,
+      estimated_claude_cost_usd:       summary.estimated_claude_cost_usd,
+      estimated_savings_usd:           summary.estimated_savings_usd,
+    })
+    .then(({ error }) => {
+      if (error) {
+        console.error("[pipeline] Failed to persist run summary:", error.message);
+      } else {
+        console.log(`[pipeline] Run summary persisted — id: ${runId}`);
+      }
+    });
 
   return summary;
 }
@@ -1176,6 +1266,13 @@ export async function runPipelineAll(
 // ─────────────────────────────────────────────────────────────────────────────
 
 function accumulateStats(stats: RunStats, result: CandidateResult): void {
+  // Track gate entry counts for accurate cost estimation — derived from stoppedAt,
+  // which is set for all statuses (passed, rejected, and failed).
+  const enteredGate1 = result.stoppedAt !== "gate0";
+  const enteredGate2 = enteredGate1 && result.stoppedAt !== "gate1";
+  if (enteredGate1) stats.gate1_entered++;
+  if (enteredGate2) stats.gate2_entered++;
+
   if (result.status === "failed") {
     stats.candidates_failed++;
     return;

@@ -31,9 +31,11 @@ import {
   deduplicateCandidates,
   computeCompositeRating,
   type TextSearchResult,
+  type RawCandidate,
 } from "./utils";
 import { buildSearchQueries, DISCOVERY_TARGETS } from "@/pipeline/stage1-search-queries";
 import { fetchCityContext } from "@/types/language-config";
+import { searchViatorTours } from "./stage1-viator";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -75,6 +77,7 @@ export interface Stage1Result {
   pretriageRejected: number;
   earlyTrapRejected: number;
   enteringGate0: number;
+  viatorEnrichmentLookups: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -505,26 +508,6 @@ async function bookingSearch(_cityName: string, _maxResults: number): Promise<Bo
   return [];
 }
 
-interface ViatorTour {
-  productCode: string;
-  title: string;
-  description: string;
-  rating: number;
-  reviewCount: number;
-  webURL: string;
-  // Viator doesn't always provide precise coordinates — use city centre as fallback
-  lat?: number;
-  lng?: number;
-}
-
-async function viatorSearch(_cityName: string, _maxResults: number): Promise<ViatorTour[]> {
-  // TODO: Implement once Viator affiliate API credentials are live.
-  // Endpoint: Viator /products/search with destinationId
-  // Kraków destination ID: 737 (confirm against Viator destination taxonomy)
-  console.warn("[stage1] Viator search not yet implemented — returning empty");
-  return [];
-}
-
 async function getYourGuideSearch(_cityName: string, _maxResults: number): Promise<unknown[]> {
   // TODO: Implement once GetYourGuide affiliate API credentials are live.
   console.warn("[stage1] GetYourGuide search not yet implemented — returning empty");
@@ -558,6 +541,13 @@ interface PendingCandidate {
   early_trap_flag: boolean;      // 1 early trap signal detected
   early_trap_rejected: boolean;  // 2+ early trap signals — rejected before Place Details
   pretriage_rejected: boolean;   // failed zero-cost pre-triage
+  // Viator-specific enrichment — populated for tour candidates sourced from Viator
+  viator_product_code?: string | null;
+  viator_affiliate_url?: string | null;
+  viator_price_from_eur?: number | null;
+  viator_description?: string | null;
+  viator_flags?: string[] | null;
+  viator_tags?: number[] | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -729,7 +719,9 @@ export async function runStage1(
   );
 
   // ── Step 4: Merge secondary source candidates ─────────────────────────────
-  const secondaryCandidates = await secondaryPromise;
+  const secondaryResult = await secondaryPromise;
+  const secondaryCandidates = secondaryResult.candidates;
+  const viatorEnrichmentLookups = secondaryResult.viatorEnrichmentLookups;
   const allCandidates = [...pendingCandidates, ...secondaryCandidates];
 
   // ── Step 5: Deduplicate by 50m proximity ──────────────────────────────────
@@ -886,6 +878,14 @@ export async function runStage1(
             photo_name: candidate.photo_name,
             price_level: candidate.price_level,
             early_trap_flag: candidate.early_trap_flag,
+            ...(candidate.viator_product_code != null && {
+              viator_product_code: candidate.viator_product_code,
+              viator_affiliate_url: candidate.viator_affiliate_url,
+              viator_price_from_eur: candidate.viator_price_from_eur,
+              viator_description: candidate.viator_description,
+              viator_flags: candidate.viator_flags,
+              viator_tags: candidate.viator_tags,
+            }),
           },
         }, { onConflict: "google_place_id,city_id,category" })
         .select("id")
@@ -916,6 +916,7 @@ export async function runStage1(
     pretriageRejected: pretriageRejected.length,
     earlyTrapRejected: earlyTrapRejected.length,
     enteringGate0: candidateIds.length,
+    viatorEnrichmentLookups,
   };
 }
 
@@ -927,16 +928,80 @@ async function fetchSecondarySource(
   category: Category,
   cityName: string,
   maxResults: number
-): Promise<PendingCandidate[]> {
+): Promise<{ candidates: PendingCandidate[]; viatorEnrichmentLookups: number }> {
   switch (category) {
     case "nightlife":
-      return fetchFoursquareCandidates(cityName, maxResults);
+      return { candidates: await fetchFoursquareCandidates(cityName, maxResults), viatorEnrichmentLookups: 0 };
     case "accommodation":
-      return fetchBookingCandidates(cityName, maxResults);
-    case "tour":
-      return fetchTourCandidates(cityName, maxResults);
+      return { candidates: await fetchBookingCandidates(cityName, maxResults), viatorEnrichmentLookups: 0 };
+    case "tour": {
+      const rawCandidates = await fetchTourCandidates(cityName, maxResults);
+      const enriched: PendingCandidate[] = [];
+      let viatorEnrichmentLookups = 0;
+
+      // Resolve coordinates for Viator candidates — Viator search does not return lat/lng.
+      // Run in batches of 5 to stay under Text Search rate limits.
+      const ENRICH_CONCURRENCY = 5;
+      for (let i = 0; i < rawCandidates.length; i += ENRICH_CONCURRENCY) {
+        const batch = rawCandidates.slice(i, i + ENRICH_CONCURRENCY);
+        const batchResults = await Promise.all(
+          batch.map(async (c): Promise<PendingCandidate | null> => {
+            let lat = c.lat;
+            let lng = c.lng;
+
+            if (c._needs_coordinate_enrichment) {
+              viatorEnrichmentLookups++;
+              const results = await googleTextSearch(String(c.name), cityName, 1).catch(() => []);
+              if (results.length > 0) {
+                lat = results[0].location.latitude;
+                lng = results[0].location.longitude;
+              } else {
+                console.warn(`[stage1] No coordinate match for Viator tour "${c.name}" — dropping`);
+                return null;
+              }
+            }
+
+            return {
+              name: String(c.name),
+              address: cityName,
+              lat,
+              lng,
+              google_place_id: null,
+              sources: c.sources,
+              google_maps_rating: null,
+              google_maps_review_count: null,
+              booking_com_rating: null,
+              tripadvisor_rating: (c.viator_rating as number | null) ?? null,
+              tripadvisor_review_count: (c.viator_review_count as number | null) ?? null,
+              price_level: null,
+              opening_hours_text: null,
+              business_status: null,
+              website: (c.viator_affiliate_url as string | null) ?? null,
+              recent_reviews: [],
+              review_source: "google",
+              review_count_fetched: 0,
+              photo_name: null,
+              early_trap_flag: false,
+              early_trap_rejected: false,
+              pretriage_rejected: false,
+              viator_product_code: (c.viator_product_code as string | null) ?? null,
+              viator_affiliate_url: (c.viator_affiliate_url as string | null) ?? null,
+              viator_price_from_eur: (c.viator_price_from_eur as number | null) ?? null,
+              viator_description: (c.viator_description as string | null) ?? null,
+              viator_flags: (c.viator_flags as string[] | null) ?? null,
+              viator_tags: (c.viator_tags as number[] | null) ?? null,
+            };
+          })
+        );
+        for (const r of batchResults) {
+          if (r) enriched.push(r);
+        }
+      }
+
+      return { candidates: enriched, viatorEnrichmentLookups };
+    }
     default:
-      return [];
+      return { candidates: [], viatorEnrichmentLookups: 0 };
   }
 }
 
@@ -1042,55 +1107,13 @@ async function fetchBookingCandidates(
 async function fetchTourCandidates(
   cityName: string,
   maxResults: number
-): Promise<PendingCandidate[]> {
-  // Viator and GYG run in parallel
-  const [viator, gyg] = await Promise.allSettled([
-    viatorSearch(cityName, maxResults),
-    getYourGuideSearch(cityName, maxResults),
-  ]);
-
-  const candidates: PendingCandidate[] = [];
-
-  if (viator.status === "fulfilled") {
-    for (const tour of viator.value) {
-      candidates.push({
-        name: tour.title,
-        address: cityName,  // Tour departure points use city as fallback
-        lat: tour.lat ?? 50.0647,   // Kraków centre fallback
-        lng: tour.lng ?? 19.9450,
-        google_place_id: null,
-        sources: [
-          {
-            source: "viator",
-            source_id: tour.productCode,
-            source_url: tour.webURL,
-            is_primary: true,
-          },
-        ],
-        google_maps_rating: null,
-        google_maps_review_count: null,
-        booking_com_rating: null,
-        tripadvisor_rating: tour.rating,
-        tripadvisor_review_count: tour.reviewCount,
-        price_level: null,
-        opening_hours_text: null,
-        business_status: null,
-        website: tour.webURL,
-        recent_reviews: [],
-        review_source: "google",
-        review_count_fetched: 0,
-        photo_name: null,
-        early_trap_flag: false,
-        early_trap_rejected: false,
-        pretriage_rejected: false,
-      });
-    }
+): Promise<RawCandidate[]> {
+  try {
+    return await searchViatorTours({ cityName, maxCandidates: maxResults });
+  } catch (err) {
+    console.warn("[stage1] Viator search failed — returning empty", err);
+    return [];
   }
-
-  // GetYourGuide — shape TBD once API credentials are live
-  // if (gyg.status === "fulfilled") { ... }
-
-  return candidates;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

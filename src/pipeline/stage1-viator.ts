@@ -159,7 +159,7 @@ export async function resolveViatorDestinationId(cityName: string): Promise<stri
     }
 
     return response.json() as Promise<ViatorDestinationsResponse>;
-  });
+  }, "stage1:viator:destinations");
 
   const normalised = cacheKey;
 
@@ -198,9 +198,7 @@ export async function resolveViatorDestinationId(cityName: string): Promise<stri
   const destinationId = String(match.destinationId);
   destinationIdCache.set(cacheKey, destinationId);
 
-  console.log(
-    `[stage1:viator] Resolved "${cityName}" → destination ID ${destinationId} (${match.destinationName})`
-  );
+  console.log(`[stage1-viator] Resolved "${cityName}" → destination ID ${destinationId} (${match.destinationName})`);
 
   return destinationId;
 }
@@ -255,7 +253,7 @@ async function fetchViatorProductPage(
     }
 
     return response.json() as Promise<ViatorSearchResponse>;
-  });
+  }, "stage1:viator:search");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
