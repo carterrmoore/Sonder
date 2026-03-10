@@ -24,10 +24,11 @@ export interface EntryCardData {
   name: string;
   category: Category;
   neighbourhood: string | null;
-  editorial_hook: string;
-  photos: string[] | null;
+  editorial_hook: string | null;
+  raw_pipeline_data: Record<string, unknown> | null;
   price_level: number | null;
   tags: string[] | null;
+  google_place_id: string | null;
 }
 
 /** Full entry for the detail page. */
@@ -48,6 +49,7 @@ export interface EntryFull {
   insider_tip: string | null;
   what_to_order: string | null;
   why_it_made_the_cut: string | null;
+  google_place_id: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -67,8 +69,8 @@ function extractNeighbourhood(raw: unknown): string | null {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Fetch all visible entries for a city.
- * RLS enforces visibility — no status filter needed in the query.
+ * Fetch approved entries for a city.
+ * review_status filter scopes to the curated set; RLS enforces city-level access.
  */
 export async function getApprovedEntries(
   cityId: string
@@ -77,8 +79,20 @@ export async function getApprovedEntries(
 
   const { data } = await supabase
     .from("entries")
-    .select("id, slug, name, category, neighbourhood_id, editorial_hook, photos, price_level, tags")
+    .select(`
+      id,
+      slug,
+      name,
+      category,
+      editorial_hook,
+      price_level,
+      tags,
+      raw_pipeline_data,
+      google_place_id,
+      neighbourhood:neighbourhood_id ( display_name )
+    `)
     .eq("city_id", cityId)
+    .eq("review_status", "approved")
     .order("name");
 
   return (data ?? []).map((row) => ({
@@ -86,11 +100,12 @@ export async function getApprovedEntries(
     slug: row.slug ?? null,
     name: row.name,
     category: row.category as Category,
-    neighbourhood: null,
-    editorial_hook: row.editorial_hook,
-    photos: row.photos ?? null,
+    neighbourhood: extractNeighbourhood(row.neighbourhood),
+    editorial_hook: (row.editorial_hook as string) ?? null,
+    raw_pipeline_data: (row.raw_pipeline_data as Record<string, unknown>) ?? null,
     price_level: row.price_level ?? null,
     tags: row.tags ?? null,
+    google_place_id: (row.google_place_id as string) ?? null,
   }));
 }
 
@@ -113,6 +128,7 @@ function rowToEntryFull(data: Record<string, unknown>): EntryFull {
     insider_tip: (data.insider_tip as string) ?? null,
     what_to_order: (data.what_to_order as string) ?? null,
     why_it_made_the_cut: (data.why_it_made_the_cut as string) ?? null,
+    google_place_id: (data.google_place_id as string) ?? null,
   };
 }
 

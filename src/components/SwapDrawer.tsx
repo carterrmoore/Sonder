@@ -10,38 +10,31 @@ import { CATEGORY_DISPLAY } from "@/pipeline/constants";
 import { tokens } from "@/lib/tokens";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Contextual swap tag logic
+// Contextual tag helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function swapTag(
-  original: ItinerarySlot,
-  alternative: ScoredEntry
+function getContextualTag(
+  alternative: ScoredEntry,
+  originalSlot: ItinerarySlot
 ): string {
   const altNeighbourhood = alternative.entry.neighbourhood;
-  const origNeighbourhood = original.entrySnapshot.neighbourhood;
-  const altCategory = alternative.entry.category;
-  const origCategory = original.entrySnapshot.category;
-  const altPrice = alternative.entry.price_level;
-  const origPrice = original.entrySnapshot as { price_level?: number | null };
+  const origNeighbourhood = originalSlot.entrySnapshot.neighbourhood;
 
-  // 1. Same neighbourhood
   if (altNeighbourhood && origNeighbourhood && altNeighbourhood === origNeighbourhood) {
-    return `Also in ${altNeighbourhood}`;
+    return "Same neighbourhood";
   }
-  // 2. Different neighbourhood, same category
-  if (altCategory === origCategory) {
-    return "Similar spot, different area";
+  if (
+    (alternative.entry as any).quality_score !== undefined &&
+    (originalSlot.entrySnapshot as any).quality_score !== undefined &&
+    ((alternative.entry as any).quality_score ?? 0) >
+      ((originalSlot.entrySnapshot as any).quality_score ?? 0) + 5
+  ) {
+    return "Higher rated";
   }
-  // 3. Higher score than a baseline (we use 65 as "highly rated")
-  if (alternative.score >= 65) {
-    return "Highly rated alternative";
+  if (altNeighbourhood) {
+    return `Similar · ${altNeighbourhood}`;
   }
-  // 4. Similar price level
-  const origPriceLevel = (origPrice as { price_level?: number | null }).price_level ?? null;
-  if (altPrice !== null && origPriceLevel !== null && Math.abs(altPrice - origPriceLevel) <= 1) {
-    return "Similar price point";
-  }
-  return "Alternative pick";
+  return "Similar pick";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -184,60 +177,143 @@ export default function SwapDrawer({
           </button>
         </div>
 
-        <div
-          style={{
-            padding: `20px ${tokens.sp24}`,
-            display: "flex",
-            flexDirection: "column",
-            gap: tokens.sp12,
-          }}
-        >
-          {/* Keep original */}
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {/* Keep original — prominent, top position */}
           <button
             type="button"
             onClick={onClose}
             style={{
-              fontFamily: tokens.fontBody,
-              fontWeight: 500,
-              fontSize: tokens.textBodySm,
-              color: tokens.warm,
-              background: "none",
-              border: "1px solid rgba(245, 240, 232, 0.20)",
-              borderRadius: tokens.radiusButton,
-              padding: `${tokens.sp12} ${tokens.sp16}`,
+              display: "block",
+              width: "100%",
+              padding: `${tokens.sp16} ${tokens.sp24}`,
+              backgroundColor: "transparent",
+              border: "none",
+              borderBottom: "1px solid rgba(26,26,24,0.1)",
               cursor: "pointer",
               textAlign: "left",
+              fontFamily: tokens.fontBody,
+              fontSize: tokens.textBodySm,
+              fontWeight: 500,
+              color: tokens.warm,
+              opacity: 0.7,
             }}
           >
             Keep original
           </button>
 
-          {/* Divider */}
-          <div
-            style={{
-              height: "1px",
-              backgroundColor: "rgba(245, 240, 232, 0.08)",
-              marginBlock: tokens.sp4,
-            }}
-          />
-
           {/* Alternative cards */}
-          {filteredAlternatives.map((alt) => (
-            <AlternativeCard
-              key={alt.entry.id}
-              alt={alt}
-              onSwap={() => { onSwap(slot.id, alt.entry); onClose(); }}
-            />
-          ))}
+          {filteredAlternatives.map((alt) => {
+            const altHook =
+              (alt.entry as any).editorial_hook ||
+              (alt.entry as any).insider_tip ||
+              null;
+            const tag = getContextualTag(alt, slot);
 
-          {/* Divider */}
-          <div
-            style={{
-              height: "1px",
-              backgroundColor: "rgba(245, 240, 232, 0.08)",
-              marginBlock: tokens.sp4,
-            }}
-          />
+            return (
+              <div
+                key={alt.entry.id}
+                style={{
+                  display: "flex",
+                  gap: "var(--spacing-px-16)",
+                  padding: "var(--spacing-px-16)",
+                  borderBottom: "1px solid rgba(26,26,24,0.08)",
+                  alignItems: "flex-start",
+                }}
+              >
+                {/* Photo thumbnail — 60×60 */}
+                <div
+                  style={{
+                    width: "60px",
+                    height: "60px",
+                    flexShrink: 0,
+                    borderRadius: 0,
+                    overflow: "hidden",
+                    backgroundColor: "var(--color-surface-2)",
+                  }}
+                >
+                  <AltPhoto entry={alt} />
+                </div>
+
+                {/* Entry info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p
+                    style={{
+                      fontFamily: tokens.fontBody,
+                      fontSize: tokens.textBodyMd,
+                      fontWeight: 600,
+                      color: tokens.warm,
+                      margin: "0 0 2px",
+                    }}
+                  >
+                    {alt.entry.name}
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: tokens.fontBody,
+                      fontSize: tokens.textCaption,
+                      color: tokens.warm,
+                      opacity: 0.5,
+                      margin: "0 0 4px",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    {alt.entry.neighbourhood
+                      ? `${alt.entry.neighbourhood} · `
+                      : ""}
+                    {CATEGORY_DISPLAY[alt.entry.category]?.label}
+                  </p>
+                  {altHook && (
+                    <p
+                      className="line-clamp-1"
+                      style={{
+                        fontFamily: tokens.fontBody,
+                        fontSize: tokens.textBodySm,
+                        color: tokens.warm,
+                        opacity: 0.65,
+                        margin: "0 0 8px",
+                      }}
+                    >
+                      {altHook}
+                    </p>
+                  )}
+                  <span
+                    style={{
+                      display: "inline-block",
+                      fontFamily: tokens.fontBody,
+                      fontSize: tokens.textCaption,
+                      color: tokens.warm,
+                      opacity: 0.4,
+                      letterSpacing: "0.02em",
+                    }}
+                  >
+                    {tag}
+                  </span>
+                </div>
+
+                {/* Swap CTA */}
+                <button
+                  type="button"
+                  onClick={() => { onSwap(slot.id, alt.entry); onClose(); }}
+                  style={{
+                    flexShrink: 0,
+                    alignSelf: "center",
+                    padding: "8px 16px",
+                    backgroundColor: tokens.warm,
+                    color: tokens.ink,
+                    fontFamily: tokens.fontBody,
+                    fontSize: tokens.textCaption,
+                    fontWeight: 500,
+                    border: "none",
+                    borderRadius: tokens.radiusButton,
+                    cursor: "pointer",
+                  }}
+                >
+                  Swap
+                </button>
+              </div>
+            );
+          })}
 
           {/* Remove */}
           <button
@@ -254,7 +330,7 @@ export default function SwapDrawer({
               background: "none",
               border: "none",
               cursor: "pointer",
-              padding: `${tokens.sp8} 0`,
+              padding: `${tokens.sp16} ${tokens.sp24}`,
               textAlign: "left",
               textDecoration: "underline",
               textUnderlineOffset: "3px",
@@ -300,15 +376,10 @@ export default function SwapDrawer({
   );
 }
 
-// ── AlternativeCard ───────────────────────────────────────────────────────────
-// Thumbnail (64×64) + name + meta. Photo loads async, non-blocking.
+// ── AltPhoto ──────────────────────────────────────────────────────────────────
+// 60×60 photo thumbnail for alternative cards, loads async non-blocking.
 
-interface AlternativeCardProps {
-  alt: ScoredEntry;
-  onSwap: (entryId: string) => void;
-}
-
-function AlternativeCard({ alt, onSwap }: AlternativeCardProps) {
+function AltPhoto({ entry: alt }: { entry: ScoredEntry }) {
   const { entry } = alt;
 
   const pipelineUrl: string | null =
@@ -319,8 +390,8 @@ function AlternativeCard({ alt, onSwap }: AlternativeCardProps) {
   );
 
   useEffect(() => {
-    if (pipelineUrl) return; // already resolved
-    if (!entry.google_place_id) return; // no fallback possible
+    if (pipelineUrl) return;
+    if (!entry.google_place_id) return;
 
     let cancelled = false;
     setPhotoState({ status: "loading" });
@@ -328,106 +399,32 @@ function AlternativeCard({ alt, onSwap }: AlternativeCardProps) {
     fetchPlacePhotos(entry.google_place_id, 1)
       .then((names) => {
         if (cancelled) return;
-        if (names.length === 0) {
-          setPhotoState({ status: "error" });
-          return;
-        }
-        setPhotoState({ status: "ready", url: buildPhotoUrl(names[0], 800) });
+        if (names.length === 0) { setPhotoState({ status: "error" }); return; }
+        setPhotoState({ status: "ready", url: buildPhotoUrl(names[0], 400) });
       })
-      .catch(() => {
-        if (!cancelled) setPhotoState({ status: "error" });
-      });
+      .catch(() => { if (!cancelled) setPhotoState({ status: "error" }); });
 
     return () => { cancelled = true; };
   }, [entry.google_place_id, pipelineUrl]);
 
-  const display = CATEGORY_DISPLAY[entry.category];
-
+  if (photoState.status === "ready") {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={photoState.url}
+        alt={entry.name}
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        onError={() => setPhotoState({ status: "error" })}
+      />
+    );
+  }
   return (
     <div
       style={{
-        display: "flex",
-        alignItems: "center",
-        gap: tokens.sp12,
-        padding: `${tokens.sp12} ${tokens.sp16}`,
-        cursor: "pointer",
-        borderBottom: `1px solid color-mix(in srgb, ${tokens.ink} 8%, transparent)`,
+        width: "100%",
+        height: "100%",
+        backgroundColor: "var(--color-surface-2)",
       }}
-      onClick={() => onSwap(entry.id)}
-    >
-      {/* 64×64 thumbnail */}
-      <div
-        style={{
-          width: 64,
-          height: 64,
-          borderRadius: 4,
-          overflow: "hidden",
-          flexShrink: 0,
-          backgroundColor: tokens.card,
-        }}
-      >
-        {photoState.status === "ready" && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={photoState.url}
-            alt={entry.name}
-            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-            onError={() => setPhotoState({ status: "error" })}
-          />
-        )}
-        {/* idle / loading / error → empty colored block, no fallback stub */}
-        {(photoState.status === "idle" || photoState.status === "loading") && (
-          <div style={{ width: "100%", height: "100%", backgroundColor: tokens.card }} />
-        )}
-      </div>
-
-      {/* Name + meta */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p
-          style={{
-            fontFamily: tokens.fontDisplay,
-            fontSize: tokens.textBodyMd,
-            fontWeight: 400,
-            color: tokens.ink,
-            margin: "0 0 2px",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {entry.name}
-        </p>
-        <p
-          style={{
-            fontFamily: tokens.fontBody,
-            fontSize: tokens.textCaption,
-            color: tokens.ink,
-            opacity: 0.55,
-            margin: 0,
-          }}
-        >
-          {display.label}{entry.neighbourhood ? ` · ${entry.neighbourhood}` : ""}
-        </p>
-      </div>
-
-      {/* Swap CTA */}
-      <button
-        style={{
-          fontFamily: tokens.fontBody,
-          fontSize: tokens.textCaption,
-          fontWeight: 500,
-          color: tokens.ink,
-          background: "none",
-          border: `1px solid color-mix(in srgb, ${tokens.ink} 25%, transparent)`,
-          borderRadius: tokens.radiusButton,
-          padding: "4px 10px",
-          cursor: "pointer",
-          flexShrink: 0,
-        }}
-        onClick={(e) => { e.stopPropagation(); onSwap(entry.id); }}
-      >
-        Swap
-      </button>
-    </div>
+    />
   );
 }

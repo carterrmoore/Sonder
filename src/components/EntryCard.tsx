@@ -6,12 +6,12 @@ import { CATEGORY_DISPLAY, COLOR_GROUPS } from "@/pipeline/constants";
 import type { EntryCardData } from "@/lib/entries";
 import { buildPhotoUrl, fetchPlacePhotos } from "@/lib/maps";
 import CategoryPill from "@/components/ui/CategoryPill";
-import { tokens } from "@/lib/tokens";
 
 interface EntryCardProps {
   entry: EntryCardData;
-  /** Preference score 0–100; controls a subtle visual rank signal */
   score?: number;
+  featured?: boolean;
+  rank?: number;
 }
 
 type PhotoState =
@@ -19,12 +19,26 @@ type PhotoState =
   | { status: "ready"; url: string }
   | { status: "error" };
 
-export default function EntryCard({ entry, score }: EntryCardProps) {
+export default function EntryCard({ entry, featured = false, rank }: EntryCardProps) {
   const display = CATEGORY_DISPLAY[entry.category];
+  const pillBg = COLOR_GROUPS[display?.colorGroup]?.bg ?? "var(--color-surface-3)";
 
-  // ── Photo resolution ──────────────────────────────────────────────────────
+  // ── Editorial hook: fallback chain ─────────────────────────────────────────
+  const hook =
+    entry.editorial_hook ||
+    (entry as any).insider_tip ||
+    (entry as any).why_it_made_the_cut ||
+    null;
 
-  // Priority 1: pipeline-curated photo
+  // ── Neighbourhood ──────────────────────────────────────────────────────────
+  const neighbourhoodName =
+    typeof entry.neighbourhood === "string"
+      ? entry.neighbourhood
+      : Array.isArray(entry.neighbourhood)
+      ? (entry.neighbourhood[0] as any)?.display_name ?? null
+      : (entry.neighbourhood as any)?.display_name ?? null;
+
+  // ── Photo resolution ───────────────────────────────────────────────────────
   const pipelineUrl: string | null =
     (entry.raw_pipeline_data as any)?.photos?.selected_url ?? null;
 
@@ -33,67 +47,61 @@ export default function EntryCard({ entry, score }: EntryCardProps) {
   );
 
   useEffect(() => {
-    // If we already have a pipeline URL, nothing to do
     if (pipelineUrl) return;
-
-    // Priority 2: Google Maps via fetchPlacePhotos + buildPhotoUrl
     if (!entry.google_place_id) {
       setPhoto({ status: "error" });
       return;
     }
-
     let cancelled = false;
     fetchPlacePhotos(entry.google_place_id, 1)
       .then((names) => {
         if (cancelled) return;
-        if (names.length === 0) {
-          setPhoto({ status: "error" });
-          return;
-        }
+        if (names.length === 0) { setPhoto({ status: "error" }); return; }
         setPhoto({ status: "ready", url: buildPhotoUrl(names[0], 800) });
       })
-      .catch(() => {
-        if (!cancelled) setPhoto({ status: "error" });
-      });
-
-    return () => {
-      cancelled = true;
-    };
+      .catch(() => { if (!cancelled) setPhoto({ status: "error" }); });
+    return () => { cancelled = true; };
   }, [entry.google_place_id, pipelineUrl]);
 
-  // ── Render ────────────────────────────────────────────────────────────────
-
-  const neighbourhoodName = entry.neighbourhood;
-
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <Link
       href={`/krakow/${entry.slug}`}
-      style={{ textDecoration: "none", display: "block" }}
+      style={{
+        textDecoration: "none",
+        display: "block",
+        gridColumn: featured ? "span 2" : undefined,
+        height: "100%",
+      }}
     >
       <div
         style={{
-          backgroundColor: tokens.card,
-          borderRadius: tokens.radiusCard,
-          boxShadow: tokens.shadowCardRest,
+          backgroundColor: "var(--color-card)",
+          borderRadius: "var(--radius-card)",
+          boxShadow: "var(--shadow-card-rest)",
           overflow: "hidden",
-          transition: "box-shadow 0.2s ease",
+          transition: "box-shadow 200ms ease",
           cursor: "pointer",
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
         }}
         onMouseEnter={(e) => {
-          (e.currentTarget as HTMLDivElement).style.boxShadow = tokens.shadowCardHover;
+          (e.currentTarget as HTMLDivElement).style.boxShadow = "var(--shadow-card-hover)";
         }}
         onMouseLeave={(e) => {
-          (e.currentTarget as HTMLDivElement).style.boxShadow = tokens.shadowCardRest;
+          (e.currentTarget as HTMLDivElement).style.boxShadow = "var(--shadow-card-rest)";
         }}
       >
-        {/* ── Photo area (16:9 via aspect-video) ── */}
+        {/* Photo area — 3:2 standard, 16:9 featured */}
         <div
           style={{
             position: "relative",
             width: "100%",
-            aspectRatio: "16 / 9",
+            aspectRatio: featured ? "16 / 9" : "3 / 2",
+            flexShrink: 0,
             overflow: "hidden",
-            backgroundColor: tokens.card,
+            backgroundColor: photo.status === "error" ? pillBg : "var(--color-surface-2)",
           }}
         >
           {photo.status === "loading" && <ShimmerSkeleton />}
@@ -104,89 +112,93 @@ export default function EntryCard({ entry, score }: EntryCardProps) {
               src={photo.url}
               alt={entry.name}
               style={{
+                position: "absolute",
+                inset: 0,
                 width: "100%",
                 height: "100%",
                 objectFit: "cover",
                 display: "block",
+                borderRadius: 0,
               }}
               onError={() => setPhoto({ status: "error" })}
             />
           )}
 
-          {photo.status === "error" && (
+          {/* Category pill — always visible regardless of photo state */}
+          <div style={{ position: "absolute", top: 12, left: 12, zIndex: 1 }}>
+            <CategoryPill category={entry.category} size="sm" />
+          </div>
+
+          {/* Rank badge — top-right, ranks 1–5 only */}
+          {rank !== undefined && (
             <div
               style={{
-                width: "100%",
-                height: "100%",
-                backgroundColor: tokens.ink,
+                position: "absolute",
+                top: 12,
+                right: 12,
+                zIndex: 1,
+                width: "24px",
+                height: "24px",
+                borderRadius: "50%",
+                backgroundColor: rank === 1
+                  ? "var(--color-gold)"
+                  : "rgba(245, 240, 232, 0.85)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                fontFamily: "var(--font-body)",
+                fontSize: "11px",
+                fontWeight: 600,
+                color: "var(--color-ink)",
+                backdropFilter: "blur(4px)",
               }}
             >
-              <CategoryPill category={entry.category} />
-            </div>
-          )}
-
-          {/* Category pill — overlaid top-left on every photo state */}
-          {photo.status !== "error" && (
-            <div style={{ position: "absolute", top: 12, left: 12 }}>
-              <CategoryPill category={entry.category} />
+              {rank}
             </div>
           )}
         </div>
 
-        {/* ── Card body ── */}
-        <div style={{ padding: tokens.sp16 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "baseline",
-              marginBottom: tokens.sp4,
-            }}
-          >
-            <span
+        {/* Card body — always renders, independent of photo state */}
+        <div style={{ padding: "20px", flex: 1, display: "flex", flexDirection: "column" }}>
+          {neighbourhoodName && (
+            <p
               style={{
-                fontFamily: tokens.fontBody,
-                fontSize: tokens.textCaption,
-                color: tokens.ink,
+                fontFamily: "var(--font-body)",
+                fontSize: "var(--text-caption)",
+                color: "var(--color-ink)",
                 opacity: 0.5,
+                margin: "0 0 4px",
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
               }}
             >
-              {neighbourhoodName ?? ""}
-            </span>
-          </div>
+              {neighbourhoodName}
+            </p>
+          )}
 
           <h3
+            className="text-heading-lg"
             style={{
-              fontFamily: tokens.fontDisplay,
-              fontSize: tokens.textHeadingSm,
-              fontWeight: 400,
-              color: tokens.ink,
-              margin: `0 0 ${tokens.sp8}`,
-              lineHeight: 1.2,
+              margin: "0 0 8px",
+              color: "var(--color-ink)",
             }}
           >
             {entry.name}
           </h3>
 
-          {entry.editorial_hook && (
+          {hook && (
             <p
+              className="line-clamp-2"
               style={{
-                fontFamily: tokens.fontBody,
-                fontSize: tokens.textBodySm,
-                color: tokens.ink,
-                opacity: 0.75,
+                fontFamily: "var(--font-body)",
+                fontSize: "var(--text-body-sm)",
+                lineHeight: "var(--leading-body-sm)",
+                color: "var(--color-ink)",
+                opacity: 0.72,
                 margin: 0,
-                lineHeight: 1.5,
-                display: "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
               }}
             >
-              {entry.editorial_hook}
+              {hook}
             </p>
           )}
         </div>
@@ -203,15 +215,15 @@ function ShimmerSkeleton() {
       <style>{`
         @keyframes sonder-shimmer {
           0%   { background-position: -400px 0; }
-          100% { background-position: 400px 0; }
+          100% { background-position:  400px 0; }
         }
       `}</style>
       <div
         style={{
-          width: "100%",
-          height: "100%",
+          position: "absolute",
+          inset: 0,
           background:
-            "linear-gradient(90deg, #ffffff 25%, #f0ede8 50%, #ffffff 75%)",
+            "linear-gradient(90deg, #f0ebe3 25%, #e8e2d8 50%, #f0ebe3 75%)",
           backgroundSize: "800px 100%",
           animation: "sonder-shimmer 1.4s ease-in-out infinite",
         }}

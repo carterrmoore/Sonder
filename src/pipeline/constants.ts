@@ -21,7 +21,7 @@ export const CATEGORY_DISPLAY: Record<Category, CategoryDisplayConfig> = {
   cafe:          { label: "Café",        colorGroup: "gold" },
   accommodation: { label: "Stay",        colorGroup: "verdigris" },
   tour:          { label: "Experience",  colorGroup: "apricot" },
-  sight:         { label: "See",         colorGroup: "apricot" },
+  sight:         { label: "Sights",      colorGroup: "apricot" },
   nightlife:     { label: "Night",       colorGroup: "apricot" },
 };
 

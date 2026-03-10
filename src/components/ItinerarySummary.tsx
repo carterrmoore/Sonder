@@ -1,8 +1,8 @@
 "use client";
 
-import CategoryPill from "@/components/ui/CategoryPill";
 import type { Itinerary } from "@/types/itinerary";
 import type { Category } from "@/types/pipeline";
+import { CATEGORY_DISPLAY } from "@/pipeline/constants";
 
 const TIME_BLOCK_LABEL: Record<string, string> = {
   morning:   "Morning",
@@ -139,13 +139,10 @@ export default function ItinerarySummary({
 
               {/* Neighbourhood heading */}
               <h2
+                className="text-display-md"
                 style={{
-                  fontFamily: "var(--font-body)",
-                  fontWeight: 600,
-                  fontSize: "var(--text-heading-lg)",
-                  lineHeight: "var(--leading-heading-lg)",
                   color: "var(--color-warm)",
-                  margin: "0 0 var(--spacing-px-20) 0",
+                  margin: "0 0 var(--spacing-px-24) 0",
                 }}
               >
                 {headingNeighbourhood ?? `Day ${day.dayNumber}`}
@@ -172,61 +169,63 @@ export default function ItinerarySummary({
                     gap: "var(--spacing-px-12)",
                   }}
                 >
-                  {day.slots.map((slot) => (
+                  {day.slots.map((slot) => {
+                    const slotHook =
+                      (slot.entrySnapshot as any).editorial_hook ||
+                      (slot.entrySnapshot as any).insider_tip ||
+                      (slot.entrySnapshot as any).why_it_made_the_cut ||
+                      null;
+                    return (
                     <div
                       key={slot.id}
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: "var(--spacing-px-16)",
-                        paddingBottom: "var(--spacing-px-12)",
+                        paddingBottom: "var(--spacing-px-16)",
                         borderBottom: "1px solid rgba(245, 240, 232, 0.08)",
                       }}
                     >
-                      <div style={{ minWidth: 0 }}>
-                        <p
-                          style={{
-                            fontFamily: "var(--font-body)",
-                            fontWeight: 600,
-                            fontSize: "var(--text-body-md)",
-                            lineHeight: "var(--leading-body-md)",
-                            color: "var(--color-warm)",
-                            margin: 0,
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }}
-                        >
-                          {slot.entrySnapshot.name}
+                      {/* Time block + category */}
+                      <p style={{
+                        fontFamily: "var(--font-body)",
+                        fontSize: "var(--text-caption)",
+                        color: "var(--color-warm)",
+                        opacity: 0.5,
+                        margin: "0 0 2px",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                      }}>
+                        {TIME_BLOCK_LABEL[slot.timeBlock] ?? slot.timeBlock}
+                        {" · "}
+                        {CATEGORY_DISPLAY[slot.entrySnapshot.category as Category]?.label}
+                      </p>
+
+                      {/* Venue name */}
+                      <p style={{
+                        fontFamily: "var(--font-body)",
+                        fontSize: "var(--text-body-md)",
+                        fontWeight: 600,
+                        color: "var(--color-warm)",
+                        margin: "0 0 4px",
+                      }}>
+                        {slot.entrySnapshot.name}
+                      </p>
+
+                      {/* Editorial hook — italic */}
+                      {slotHook && (
+                        <p style={{
+                          fontFamily: "var(--font-body)",
+                          fontSize: "var(--text-body-sm)",
+                          fontStyle: "italic",
+                          color: "var(--color-warm)",
+                          opacity: 0.6,
+                          margin: 0,
+                          lineHeight: "var(--leading-body-sm)",
+                        }}>
+                          {slotHook}
                         </p>
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "var(--spacing-px-8)",
-                          flexShrink: 0,
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontFamily: "var(--font-body)",
-                            fontSize: "var(--text-caption)",
-                            color: "var(--color-warm)",
-                            opacity: 0.4,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {TIME_BLOCK_LABEL[slot.timeBlock] ?? slot.timeBlock}
-                        </span>
-                        <CategoryPill
-                          category={slot.entrySnapshot.category as Category}
-                          size="sm"
-                        />
-                      </div>
+                      )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -256,16 +255,14 @@ export default function ItinerarySummary({
           You&apos;re ready.
         </h2>
         <p
+          className="text-body-lg"
           style={{
-            fontFamily: "var(--font-body)",
-            fontSize: "var(--text-body-md)",
-            lineHeight: "var(--leading-body-md)",
             color: "var(--color-warm)",
-            opacity: 0.6,
+            opacity: 0.7,
             margin: "0 0 var(--spacing-px-32) 0",
           }}
         >
-          {totalEntryCount} places. {totalSlots} in your itinerary. No tourist traps.
+          {totalSlots} places, chosen for you. No tourist traps, no paid placements.
         </p>
 
         <div

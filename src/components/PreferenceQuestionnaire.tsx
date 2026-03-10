@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import type { TripPreferences, Interest } from "@/types/preferences";
+import DateRangePicker from "@/components/ui/DateRangePicker";
+import ProgressBar from "@/components/questionnaire/ProgressBar";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -49,48 +51,96 @@ function Tile({ label, description, selected, onClick }: TileProps) {
       type="button"
       onClick={onClick}
       style={{
-        border: selected
-          ? "2px solid var(--color-gold)"
-          : "1px solid rgba(245, 240, 232, 0.20)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        width: "100%",
+        padding: "20px var(--spacing-px-24)",
+        border: "none",
+        borderLeft: selected
+          ? "3px solid var(--color-gold)"
+          : "3px solid transparent",
+        borderRadius: "0",
         backgroundColor: selected
-          ? "rgba(196, 154, 60, 0.10)"
+          ? "rgba(196,154,60,0.08)"
           : "transparent",
-        borderRadius: "var(--radius-card)",
-        padding: "var(--spacing-px-16) var(--spacing-px-20)",
         cursor: "pointer",
         textAlign: "left",
-        width: "100%",
-        transition:
-          "border-color 0.15s ease, background-color 0.15s ease, border-width 0.15s ease",
+        transition: "background-color 150ms ease, border-left-color 150ms ease",
+      }}
+      onMouseEnter={(e) => {
+        if (!selected) {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.borderLeftColor = "rgba(196,154,60,0.5)";
+          el.style.backgroundColor = "rgba(245,240,232,0.05)";
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!selected) {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.borderLeftColor = "transparent";
+          el.style.backgroundColor = "transparent";
+        }
       }}
     >
-      <span
-        style={{
-          display: "block",
-          fontFamily: "var(--font-body)",
-          fontWeight: 600,
-          fontSize: "var(--text-body-md)",
-          lineHeight: "var(--leading-body-md)",
-          color: "var(--color-warm)",
-        }}
-      >
-        {label}
-      </span>
-      {description && (
+      <div>
         <span
           style={{
             display: "block",
             fontFamily: "var(--font-body)",
-            fontSize: "var(--text-caption)",
-            lineHeight: "var(--leading-caption)",
+            fontSize: "var(--text-body-md)",
             color: "var(--color-warm)",
-            opacity: 0.6,
-            marginTop: "var(--spacing-px-4)",
+            opacity: selected ? 1 : 0.8,
           }}
         >
-          {description}
+          {label}
         </span>
-      )}
+        {description && (
+          <span
+            style={{
+              display: "block",
+              fontFamily: "var(--font-body)",
+              fontSize: "var(--text-caption)",
+              lineHeight: "var(--leading-caption)",
+              color: "var(--color-warm)",
+              opacity: 0.5,
+              marginTop: "var(--spacing-px-4)",
+            }}
+          >
+            {description}
+          </span>
+        )}
+      </div>
+
+      {/* Selection indicator */}
+      <span
+        style={{
+          width: "20px",
+          height: "20px",
+          borderRadius: "50%",
+          border: selected
+            ? "none"
+            : "1.5px solid rgba(245,240,232,0.3)",
+          backgroundColor: selected ? "var(--color-gold)" : "transparent",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          transition: "all 150ms ease",
+        }}
+      >
+        {selected && (
+          <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+            <path
+              d="M1 4L3.5 6.5L9 1"
+              stroke="var(--color-ink)"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
+      </span>
     </button>
   );
 }
@@ -110,9 +160,12 @@ export default function PreferenceQuestionnaire({ citySlug }: Props) {
   const [direction, setDirection] = useState<"forward" | "back">("forward");
 
   // Step 0 — dates
-  const [arrival, setArrival] = useState("");
-  const [departure, setDeparture] = useState("");
+  const [arrivalDate, setArrivalDate] = useState<Date | null>(null);
+  const [departureDate, setDepartureDate] = useState<Date | null>(null);
   const [datesFlexible, setDatesFlexible] = useState(false);
+  // Derived ISO strings for persistence
+  const arrival = arrivalDate ? arrivalDate.toISOString().slice(0, 10) : "";
+  const departure = departureDate ? departureDate.toISOString().slice(0, 10) : "";
 
   // Step 1 — group size
   const [groupSize, setGroupSize] = useState<TripPreferences["groupSize"] | null>(null);
@@ -223,7 +276,7 @@ export default function PreferenceQuestionnaire({ citySlug }: Props) {
 
   const canAdvance =
     step === 0
-      ? datesFlexible || (arrival.length > 0 && departure.length > 0)
+      ? datesFlexible || (arrivalDate !== null && departureDate !== null)
       : step === 3
         ? interests.length > 0
         : false;
@@ -231,112 +284,14 @@ export default function PreferenceQuestionnaire({ citySlug }: Props) {
   // ── Step renderers ────────────────────────────────────────────────────────
 
   const renderDates = () => (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-px-16)" }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-px-12)" }}>
-        {/* Arrival */}
-        <label style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-px-8)" }}>
-          <span
-            style={{
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-caption)",
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "var(--color-warm)",
-              opacity: 0.5,
-            }}
-          >
-            Arrival
-          </span>
-          <input
-            type="date"
-            value={arrival}
-            onChange={(e) => {
-              setArrival(e.target.value);
-              setDatesFlexible(false);
-            }}
-            disabled={datesFlexible}
-            style={{
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-body-md)",
-              color: datesFlexible ? "rgba(245, 240, 232, 0.30)" : "var(--color-warm)",
-              backgroundColor: "transparent",
-              border: "1px solid rgba(245, 240, 232, 0.20)",
-              borderRadius: "var(--radius-button)",
-              padding: "var(--spacing-px-12) var(--spacing-px-16)",
-              outline: "none",
-              width: "100%",
-              colorScheme: "dark",
-              cursor: datesFlexible ? "not-allowed" : "text",
-            }}
-          />
-        </label>
-
-        {/* Departure */}
-        <label style={{ display: "flex", flexDirection: "column", gap: "var(--spacing-px-8)" }}>
-          <span
-            style={{
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-caption)",
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "var(--color-warm)",
-              opacity: 0.5,
-            }}
-          >
-            Departure
-          </span>
-          <input
-            type="date"
-            value={departure}
-            min={arrival || undefined}
-            onChange={(e) => {
-              setDeparture(e.target.value);
-              setDatesFlexible(false);
-            }}
-            disabled={datesFlexible}
-            style={{
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-body-md)",
-              color: datesFlexible ? "rgba(245, 240, 232, 0.30)" : "var(--color-warm)",
-              backgroundColor: "transparent",
-              border: "1px solid rgba(245, 240, 232, 0.20)",
-              borderRadius: "var(--radius-button)",
-              padding: "var(--spacing-px-12) var(--spacing-px-16)",
-              outline: "none",
-              width: "100%",
-              colorScheme: "dark",
-              cursor: datesFlexible ? "not-allowed" : "text",
-            }}
-          />
-        </label>
-      </div>
-
-      {/* Flexible dates link */}
-      <button
-        type="button"
-        onClick={() => {
-          setArrival("");
-          setDeparture("");
-          setDatesFlexible(true);
-          advance();
-        }}
-        style={{
-          background: "none",
-          border: "none",
-          fontFamily: "var(--font-body)",
-          fontSize: "var(--text-body-sm)",
-          color: datesFlexible ? "var(--color-gold)" : "rgba(245, 240, 232, 0.50)",
-          cursor: "pointer",
-          padding: 0,
-          textDecoration: "underline",
-          textUnderlineOffset: "3px",
-          alignSelf: "flex-start",
-          transition: "color 0.15s ease",
-        }}
-      >
-        I don&apos;t have dates yet
-      </button>
-    </div>
+    <DateRangePicker
+      value={{ arrival: arrivalDate, departure: departureDate }}
+      onChange={({ arrival: a, departure: d }) => {
+        setArrivalDate(a);
+        setDepartureDate(d);
+        if (a || d) setDatesFlexible(false);
+      }}
+    />
   );
 
   const renderGroupSize = () => {
@@ -458,42 +413,86 @@ export default function PreferenceQuestionnaire({ citySlug }: Props) {
   };
 
   const renderCompletion = () => (
-    <div style={{ textAlign: "center" }}>
-      <h1
-        className="text-display-md"
-        style={{ color: "var(--color-warm)", margin: "0 0 var(--spacing-px-16) 0" }}
-      >
-        Your {cityName} is ready.
-      </h1>
-      <p
+    <div
+      style={{
+        position: "relative",
+        minHeight: "60vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        padding: "var(--spacing-px-64) var(--spacing-px-32)",
+        overflow: "hidden",
+        margin: "calc(-1 * var(--spacing-px-96)) calc(-1 * var(--spacing-px-24))",
+      }}
+    >
+      {/* Blurred background image */}
+      <div
         style={{
-          fontFamily: "var(--font-body)",
-          fontSize: "var(--text-body-md)",
-          lineHeight: "var(--leading-body-md)",
+          position: "absolute",
+          inset: 0,
+          backgroundImage: "url(/images/krakow-hero.jpg)",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          opacity: 0.1,
+          filter: "blur(20px)",
+          transform: "scale(1.05)",
+        }}
+        aria-hidden="true"
+      />
+
+      {/* City name */}
+      <h1
+        className="text-display-xl sonder-animate-fade-in-up"
+        style={{
           color: "var(--color-warm)",
-          opacity: 0.7,
-          margin: "0 0 var(--spacing-px-40) 0",
+          margin: "0 0 var(--spacing-px-16)",
+          position: "relative",
+          zIndex: 1,
+        }}
+      >
+        {cityName}
+      </h1>
+
+      <p
+        className="text-body-lg sonder-animate-fade-in-up"
+        style={{
+          color: "var(--color-warm)",
+          opacity: 0.72,
+          margin: "0 0 var(--spacing-px-48)",
+          maxWidth: "360px",
+          position: "relative",
+          zIndex: 1,
+          animationDelay: "200ms",
+          animationFillMode: "both",
         }}
       >
         We&apos;ve shaped the guide around your trip.
       </p>
+
       <button
         type="button"
         onClick={handleExploreNow}
+        className="sonder-animate-fade-in"
         style={{
-          fontFamily: "var(--font-body)",
-          fontWeight: 600,
-          fontSize: "var(--text-body-md)",
+          padding: "14px 32px",
           backgroundColor: "var(--color-gold)",
           color: "var(--color-ink)",
+          fontFamily: "var(--font-body)",
+          fontSize: "var(--text-body-sm)",
+          fontWeight: 600,
+          letterSpacing: "0.04em",
           border: "none",
           borderRadius: "var(--radius-button)",
-          padding: "var(--spacing-px-16) var(--spacing-px-32)",
           cursor: "pointer",
-          transition: "opacity 0.15s ease",
+          position: "relative",
+          zIndex: 1,
+          animationDelay: "600ms",
+          animationFillMode: "both",
         }}
       >
-        Explore {cityName} →
+        See your {cityName}
       </button>
     </div>
   );
@@ -522,7 +521,7 @@ export default function PreferenceQuestionnaire({ citySlug }: Props) {
         overflow: "hidden",
       }}
     >
-      {/* Progress bar */}
+      {/* Progress indicator */}
       {isQuestion && (
         <div
           style={{
@@ -532,24 +531,49 @@ export default function PreferenceQuestionnaire({ citySlug }: Props) {
             right: 0,
             zIndex: 10,
             padding: "var(--spacing-px-24) var(--spacing-px-24) 0",
-            display: "flex",
-            gap: "var(--spacing-px-8)",
+            textAlign: "center",
           }}
         >
-          {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
-            <div
-              key={i}
-              style={{
-                flex: 1,
-                height: "2px",
-                borderRadius: "1px",
-                backgroundColor:
-                  i < step ? "var(--color-gold)" : "rgba(245, 240, 232, 0.15)",
-                transition: "background-color 0.3s ease",
-              }}
-            />
-          ))}
+          <p
+            style={{
+              fontFamily: "var(--font-body)",
+              fontSize: "var(--text-caption)",
+              fontWeight: 500,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: "var(--color-warm)",
+              opacity: 0.5,
+              margin: "0",
+            }}
+          >
+            Question {step + 1} of {TOTAL_STEPS}
+          </p>
+          <ProgressBar current={step + 1} total={TOTAL_STEPS} />
         </div>
+      )}
+
+      {/* Exit link — always visible on question steps */}
+      {isQuestion && (
+        <a
+          href={`/${citySlug}`}
+          style={{
+            position: "absolute",
+            top: "var(--spacing-px-24)",
+            right: "var(--spacing-px-24)",
+            zIndex: 10,
+            fontFamily: "var(--font-body)",
+            fontSize: "var(--text-caption)",
+            color: "rgba(245, 240, 232, 0.45)",
+            textDecoration: "none",
+            letterSpacing: "0.04em",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            padding: "6px 0",
+          }}
+        >
+          Exit
+        </a>
       )}
 
       {/* Back button */}
@@ -617,38 +641,22 @@ export default function PreferenceQuestionnaire({ citySlug }: Props) {
           <div
             style={{
               width: "100%",
-              maxWidth: "560px",
+              maxWidth: "480px",
               paddingInline: "var(--spacing-px-24)",
             }}
           >
             {/* Question header (not shown on completion screen) */}
             {isQuestion && (
-              <>
-                <p
-                  style={{
-                    fontFamily: "var(--font-body)",
-                    fontSize: "var(--text-overline)",
-                    fontWeight: 500,
-                    lineHeight: "var(--leading-overline)",
-                    letterSpacing: "0.1em",
-                    textTransform: "uppercase",
-                    color: "var(--color-warm)",
-                    opacity: 0.5,
-                    margin: "0 0 var(--spacing-px-12) 0",
-                  }}
-                >
-                  Question {step + 1} of {TOTAL_STEPS}
-                </p>
-                <h1
-                  className="text-display-md"
-                  style={{
-                    color: "var(--color-warm)",
-                    margin: "0 0 var(--spacing-px-32) 0",
-                  }}
-                >
-                  {QUESTIONS[step]}
-                </h1>
-              </>
+              <h1
+                className="text-display-md"
+                style={{
+                  color: "var(--color-warm)",
+                  margin: "0 0 var(--spacing-px-32) 0",
+                  textAlign: step === 0 ? "center" : undefined,
+                }}
+              >
+                {QUESTIONS[step]}
+              </h1>
             )}
 
             {/* Step content */}
@@ -662,21 +670,19 @@ export default function PreferenceQuestionnaire({ citySlug }: Props) {
                   onClick={advance}
                   disabled={!canAdvance}
                   style={{
+                    padding: "14px 32px",
+                    backgroundColor: "var(--color-gold)",
+                    color: "var(--color-ink)",
                     fontFamily: "var(--font-body)",
+                    fontSize: "var(--text-body-sm)",
                     fontWeight: 600,
-                    fontSize: "var(--text-body-md)",
-                    backgroundColor: canAdvance
-                      ? "var(--color-gold)"
-                      : "rgba(196, 154, 60, 0.25)",
-                    color: canAdvance
-                      ? "var(--color-ink)"
-                      : "rgba(26, 26, 24, 0.40)",
+                    letterSpacing: "0.04em",
                     border: "none",
                     borderRadius: "var(--radius-button)",
-                    padding: "var(--spacing-px-16) var(--spacing-px-32)",
-                    cursor: canAdvance ? "pointer" : "not-allowed",
+                    cursor: canAdvance ? "pointer" : "default",
+                    opacity: canAdvance ? 1 : 0.4,
+                    transition: "opacity 150ms ease",
                     width: "100%",
-                    transition: "background-color 0.2s ease, color 0.2s ease",
                   }}
                 >
                   Continue

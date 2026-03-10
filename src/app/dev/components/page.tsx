@@ -15,7 +15,8 @@ const MOCK_ENTRIES: EntryCardData[] = [
     neighbourhood: "Kazimierz",
     editorial_hook:
       "A cellar restaurant where the vodka is house-infused and the pierogi are handmade by women who've been folding them for decades.",
-    photos: null,
+    raw_pipeline_data: null,
+    google_place_id: null,
     price_level: 2,
     tags: ["authentic", "essential"],
   },
@@ -27,7 +28,8 @@ const MOCK_ENTRIES: EntryCardData[] = [
     neighbourhood: "Podgórze",
     editorial_hook:
       "Third-wave coffee in a converted garage, where the baristas know every regular by name and the cold brew rivals Berlin's best.",
-    photos: null,
+    raw_pipeline_data: null,
+    google_place_id: null,
     price_level: 1,
     tags: ["hidden_gem", "small_bite"],
   },
@@ -39,7 +41,8 @@ const MOCK_ENTRIES: EntryCardData[] = [
     neighbourhood: "Stare Miasto",
     editorial_hook:
       "A fifteenth-century aristocratic residence turned boutique hotel, where the swimming pool sits under Renaissance vaults.",
-    photos: null,
+    raw_pipeline_data: null,
+    google_place_id: null,
     price_level: 4,
     tags: ["boutique", "unique_stay"],
   },
@@ -51,7 +54,8 @@ const MOCK_ENTRIES: EntryCardData[] = [
     neighbourhood: "Kazimierz",
     editorial_hook:
       "A local guide walks you through market halls and milk bars that tourists walk past, ending with a shot of Żubrówka at a bar with no sign.",
-    photos: null,
+    raw_pipeline_data: null,
+    google_place_id: null,
     price_level: 2,
     tags: ["authentic", "essential"],
   },
@@ -63,7 +67,8 @@ const MOCK_ENTRIES: EntryCardData[] = [
     neighbourhood: "Nowa Huta",
     editorial_hook:
       "A socialist-realist planned city within a city — the wide boulevards and workers' palaces tell a story no guidebook captures properly.",
-    photos: null,
+    raw_pipeline_data: null,
+    google_place_id: null,
     price_level: 0,
     tags: ["deeper_cut", "local_niche"],
   },
@@ -75,7 +80,8 @@ const MOCK_ENTRIES: EntryCardData[] = [
     neighbourhood: "Kazimierz",
     editorial_hook:
       "Candlelit tables, jazz on Wednesdays, and an upstairs room that hosts poetry readings — the bar that defined Kazimierz's revival.",
-    photos: null,
+    raw_pipeline_data: null,
+    google_place_id: null,
     price_level: 1,
     tags: ["authentic", "essential"],
   },

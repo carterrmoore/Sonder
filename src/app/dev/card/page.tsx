@@ -62,7 +62,7 @@ const CATEGORY_CONFIG: Record<string, { label: string; color: string }> = {
   cafe:          { label: "Café",       color: "#C49A3C" },
   accommodation: { label: "Stay",       color: "#E8E3DA" },
   tour:          { label: "Experience", color: "#F2A07B" },
-  sight:         { label: "See",        color: "#F2A07B" },
+  sight:         { label: "Sights",     color: "#F2A07B" },
   nightlife:     { label: "Night",      color: "#F2A07B" },
 };
 

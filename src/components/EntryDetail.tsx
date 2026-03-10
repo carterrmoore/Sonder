@@ -7,6 +7,7 @@ import { useItinerary } from "@/hooks/useItinerary";
 import { buildPhotoUrl, fetchPlacePhotos } from "@/lib/maps";
 import {
   CATEGORY_DISPLAY,
+  COLOR_GROUPS,
   PRICE_LEVEL_LABELS,
   type PriceLevel,
 } from "@/pipeline/constants";
@@ -60,6 +61,10 @@ export default function EntryDetail({ entry }: EntryDetailProps) {
     return () => { cancelled = true; };
   }, [entry.google_place_id, storedUrl]);
 
+  // ── Hero fallback color ───────────────────────────────────────────────────
+  const heroFallbackColor =
+    COLOR_GROUPS[CATEGORY_DISPLAY[entry.category]?.colorGroup]?.bg ?? "#E8E3DA";
+
   // ── Itinerary hook ────────────────────────────────────────────────────────
   const { itinerary, addEntry } = useItinerary("krakow");
 
@@ -83,7 +88,7 @@ export default function EntryDetail({ entry }: EntryDetailProps) {
         style={{
           width: "100%",
           aspectRatio: "16 / 9",
-          backgroundColor: tokens.ink,
+          backgroundColor: heroFallbackColor,
           overflow: "hidden",
           position: "relative",
         }}

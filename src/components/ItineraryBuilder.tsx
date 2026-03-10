@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { ArrowLeftRight } from "lucide-react";
+import Link from "next/link";
 import { useItinerary } from "@/hooks/useItinerary";
 import { useRouter } from "next/navigation";
 import CategoryPill from "@/components/ui/CategoryPill";
 import SwapDrawer from "@/components/SwapDrawer";
 import ItinerarySummary from "@/components/ItinerarySummary";
-import { CATEGORY_DISPLAY } from "@/pipeline/constants";
+import { CATEGORY_DISPLAY, COLOR_GROUPS } from "@/pipeline/constants";
 import { applyPreferences } from "@/lib/preference-filter";
 import type { ScoredEntry } from "@/lib/preference-filter";
 import type { EntryCardData } from "@/lib/entries";
@@ -15,6 +16,7 @@ import type { TripPreferences } from "@/types/preferences";
 import type { ItinerarySlot, TimeBlock } from "@/types/itinerary";
 import type { Category } from "@/types/pipeline";
 import { tokens } from "@/lib/tokens";
+import { buildPhotoUrl, fetchPlacePhotos } from "@/lib/maps";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -33,6 +35,12 @@ const TIME_BLOCK_LABEL: Record<TimeBlock, string> = {
   morning:   "Morning",
   afternoon: "Afternoon",
   evening:   "Evening",
+};
+
+const TIME_BLOCK_TINTS: Record<TimeBlock, string> = {
+  morning:   "rgba(196, 154, 60, 0.06)",
+  afternoon: "rgba(242, 160, 123, 0.06)",
+  evening:   "rgba(26, 26, 24, 0.04)",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -110,7 +118,6 @@ function buildAlternatives(
       se.entry.category !== "accommodation"
   );
 
-  // Same neighbourhood first, sorted by score desc
   const sameNeighbourhood = available.filter(
     (se) => se.entry.neighbourhood === origNeighbourhood && origNeighbourhood
   );
@@ -118,8 +125,7 @@ function buildAlternatives(
     (se) => se.entry.neighbourhood !== origNeighbourhood || !origNeighbourhood
   );
 
-  const merged = [...sameNeighbourhood, ...otherNeighbourhood];
-  return merged.slice(0, 4);
+  return [...sameNeighbourhood, ...otherNeighbourhood].slice(0, 4);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -148,7 +154,7 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
   const [activeTimeBlock, setActiveTimeBlock] = useState<TimeBlock>("morning");
   const [browserCategory, setBrowserCategory] = useState<Category | "all">("all");
   const [swapTarget, setSwapTarget] = useState<ItinerarySlot | null>(null);
-  // Set of day numbers the user has confirmed
+  const [justAdded, setJustAdded] = useState<string | null>(null);
   const [confirmedDays, setConfirmedDays] = useState<Set<number>>(new Set());
   const [showSummary, setShowSummary] = useState(false);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -160,13 +166,11 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
     } catch {}
   }, [citySlug]);
 
-  // Score all entries once — passed into initItinerary and used for swap alternatives
   const scoredEntries = useMemo(
     () => applyPreferences(entries, preferences),
     [entries, preferences]
   );
 
-  // Derive trip length from specific dates if available
   const derivedTripLength = useMemo(() => {
     if (!preferences) return null;
     if (preferences.arrival && preferences.departure && !preferences.datesFlexible) {
@@ -178,13 +182,11 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
   const hasSpecificDates = !!derivedTripLength;
   const resolvedTripLength = derivedTripLength ?? selectedTripLength;
 
-  // Category list for browser filter
   const categories = useMemo(
     () => ["all" as const, ...Array.from(new Set(entries.map((e) => e.category)))],
     [entries]
   );
 
-  // Filtered browser entries — sorted by preference score (applyPreferences returns desc)
   const filteredBrowserEntries = useMemo(
     () =>
       browserCategory === "all"
@@ -193,7 +195,6 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
     [scoredEntries, browserCategory]
   );
 
-  // Set of entry IDs placed in the itinerary across ALL days
   const addedEntryIds = useMemo(() => {
     if (!itinerary) return new Set<string>();
     return new Set(
@@ -201,10 +202,8 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
     );
   }, [itinerary]);
 
-  // Alias — used when passed to SwapDrawer
   const placedEntryIds = addedEntryIds;
 
-  // Check if all days are confirmed — triggers summary after short delay
   useEffect(() => {
     if (!itinerary) return;
     const allConfirmed =
@@ -232,7 +231,6 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
     router.push(`/${citySlug}`);
   }, [finaliseItinerary, router, citySlug]);
 
-  // ── Inert background when swap drawer is open ────────────────────────────
   const mainRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!mainRef.current) return;
@@ -243,8 +241,6 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
     }
   }, [swapTarget]);
 
-  // ── Swap alternatives ────────────────────────────────────────────────────
-  // Exclude all placed entries across all days, not just the current day.
   const swapAlternatives = useMemo(() => {
     if (!swapTarget) return [];
     const origNeighbourhood = swapTarget.entrySnapshot.neighbourhood;
@@ -263,7 +259,7 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
     return [...sameNeighbourhood, ...other].slice(0, 8);
   }, [swapTarget, scoredEntries, placedEntryIds]);
 
-  // ── State A — empty / setup ──────────────────────────────────────────────
+  // ── State A — setup ──────────────────────────────────────────────────────
   if (!itinerary) {
     const canStart = hasSpecificDates || selectedTripLength !== null;
 
@@ -348,11 +344,6 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
             disabled={!canStart}
             onClick={() => {
               if (!resolvedTripLength) return;
-              console.log('initItinerary called', {
-                tripLength: resolvedTripLength,
-                scoredEntriesCount: scoredEntries.length,
-                firstEntry: scoredEntries[0]?.entry?.name,
-              });
               initItinerary(
                 resolvedTripLength,
                 preferences?.arrival ?? null,
@@ -410,7 +401,7 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
     );
   }
 
-  // ── State B — timeline view ──────────────────────────────────────────────
+  // ── State B — builder ────────────────────────────────────────────────────
   const currentDay =
     itinerary.days.find((d) => d.dayNumber === selectedDay) ?? itinerary.days[0];
 
@@ -418,344 +409,367 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
     <>
       <div
         ref={mainRef}
-        style={{ minHeight: "100vh", backgroundColor: tokens.warm }}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          height: "100vh",
+          overflow: "hidden",
+          backgroundColor: "var(--color-warm)",
+        }}
       >
-        {/* ── Nav bar ─────────────────────────────────────────────────────── */}
+        {/* ── Full-width tab bar ──────────────────────────────────────────── */}
         <div
           style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 20,
-            backgroundColor: tokens.warm,
-            borderBottom: "1px solid rgba(26, 26, 24, 0.08)",
-            padding: `${tokens.sp12} ${tokens.sp24}`,
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
-            gap: tokens.sp16,
+            gap: 0,
+            borderBottom: "1px solid rgba(26,26,24,0.1)",
+            backgroundColor: "var(--color-warm)",
+            flexShrink: 0,
+            padding: "0 var(--spacing-px-24)",
           }}
         >
+          {/* Back link */}
           <a
             href={`/${citySlug}`}
             style={{
               fontFamily: tokens.fontBody,
-              fontSize: tokens.textBodySm,
+              fontSize: tokens.textCaption,
               color: tokens.ink,
-              opacity: 0.5,
+              opacity: 0.45,
               textDecoration: "none",
+              marginRight: "var(--spacing-px-24)",
+              whiteSpace: "nowrap",
+              padding: "14px 0",
             }}
           >
             ← Kraków guide
           </a>
-          <p
-            style={{
-              fontFamily: tokens.fontBody,
-              fontWeight: 600,
-              fontSize: tokens.textBodySm,
-              color: tokens.ink,
-              margin: 0,
-            }}
-          >
-            Your itinerary · {itinerary.tripLength} day
-            {itinerary.tripLength !== 1 ? "s" : ""}
-          </p>
-        </div>
 
-        {/* ── Day tab strip ───────────────────────────────────────────────── */}
-        <div
-          style={{
-            backgroundColor: tokens.warm,
-            borderBottom: "1px solid rgba(26, 26, 24, 0.08)",
-            paddingInline: tokens.sp24,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              gap: tokens.sp8,
-              paddingBlock: tokens.sp12,
-              overflowX: "auto",
-              scrollbarWidth: "none",
-            }}
-          >
-            {itinerary.days.map((d) => {
-              const active = d.dayNumber === selectedDay;
-              const confirmed = confirmedDays.has(d.dayNumber);
+          {/* Day tabs */}
+          <div style={{ display: "flex", alignItems: "stretch", gap: 0, flex: 1 }}>
+            {itinerary.days.map((day) => {
+              const isActive = selectedDay === day.dayNumber;
+              const isConfirmed = confirmedDays.has(day.dayNumber);
               return (
                 <button
-                  key={d.dayNumber}
+                  key={day.dayNumber}
                   type="button"
-                  onClick={() => setSelectedDay(d.dayNumber)}
+                  onClick={() => setSelectedDay(day.dayNumber)}
                   style={{
-                    fontFamily: tokens.fontBody,
-                    fontSize: tokens.textOverline,
-                    fontWeight: 500,
-                    letterSpacing: "0.1em",
-                    textTransform: "uppercase",
-                    borderRadius: tokens.radiusButton,
-                    padding: "6px 12px",
-                    border: active
-                      ? `1px solid ${tokens.ink}`
-                      : "1px solid rgba(26, 26, 24, 0.25)",
-                    backgroundColor: active
-                      ? tokens.ink
-                      : confirmed
-                      ? "rgba(196, 154, 60, 0.12)"
-                      : "transparent",
-                    color: active ? tokens.warm : tokens.ink,
-                    WebkitAppearance: "none",
-                    appearance: "none",
+                    position: "relative",
+                    padding: "0 var(--spacing-px-24)",
+                    height: "48px",
+                    border: "none",
+                    borderRight: "1px solid rgba(26,26,24,0.08)",
+                    backgroundColor: isActive
+                      ? "var(--color-warm)"
+                      : "rgba(26,26,24,0.02)",
                     cursor: "pointer",
-                    whiteSpace: "nowrap",
-                    flexShrink: 0,
-                    transition: "background-color 0.15s ease, color 0.15s ease",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    fontFamily: tokens.fontBody,
+                    fontSize: tokens.textBodySm,
+                    fontWeight: isActive ? 600 : 400,
+                    color: tokens.ink,
+                    opacity: isActive ? 1 : 0.5,
+                    transition: "opacity 150ms ease, background-color 150ms ease",
+                    borderBottom: isActive
+                      ? "2px solid var(--color-ink)"
+                      : "2px solid transparent",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive)
+                      (e.currentTarget as HTMLButtonElement).style.opacity = "0.8";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive)
+                      (e.currentTarget as HTMLButtonElement).style.opacity = "0.5";
                   }}
                 >
-                  {confirmed && !active && "✓ "}
-                  Day {d.dayNumber}
-                  {d.date && (
-                    <span style={{ opacity: 0.6, fontWeight: 400 }}>
-                      {" "}
-                      ·{" "}
-                      {new Date(d.date + "T00:00:00").toLocaleDateString("en-GB", {
-                        day: "numeric",
-                        month: "short",
-                      })}
-                    </span>
+                  {isConfirmed && (
+                    <svg
+                      width="10"
+                      height="8"
+                      viewBox="0 0 10 8"
+                      fill="none"
+                      style={{ opacity: 0.5 }}
+                    >
+                      <path
+                        d="M1 4L3.5 6.5L9 1"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
                   )}
+                  Day {day.dayNumber}
                 </button>
               );
             })}
           </div>
+
+          {/* Trip label */}
+          <span
+            style={{
+              fontFamily: tokens.fontBody,
+              fontSize: tokens.textCaption,
+              color: tokens.ink,
+              opacity: 0.35,
+              marginLeft: "var(--spacing-px-24)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {itinerary.days.length} day{itinerary.days.length !== 1 ? "s" : ""}
+          </span>
         </div>
 
-        {/* ── Main layout ─────────────────────────────────────────────────── */}
-        <div
+        {/* ── Two-column body ─────────────────────────────────────────────── */}
+        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+
+        {/* ── Left sidebar ────────────────────────────────────────────────── */}
+        <aside
           style={{
-            display: "grid",
-            gridTemplateColumns: "1fr",
-            maxWidth: "1280px",
-            margin: "0 auto",
-            paddingInline: tokens.sp24,
-            paddingBlock: tokens.sp32,
-            gap: tokens.sp40,
+            width: "380px",
+            flexShrink: 0,
+            display: "flex",
+            flexDirection: "column",
+            borderRight: "1px solid rgba(26,26,24,0.08)",
+            backgroundColor: "var(--color-warm)",
+            overflow: "hidden",
           }}
-          className="itinerary-layout"
         >
-          {/* ── Left: Day timeline ────────────────────────────────────────── */}
-          <div style={{ minWidth: 0 }}>
+
+          {/* Sidebar scrollable body: time block selectors */}
+          <div
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              padding: "var(--spacing-px-16) 0",
+            }}
+          >
             {TIME_BLOCKS.map((block) => {
-              const slots = currentDay.slots.filter((s) => s.timeBlock === block);
+              const isActive = activeTimeBlock === block;
+              const slotsForBlock = currentDay.slots.filter(
+                (s) => s.timeBlock === block
+              );
 
               return (
-                <div key={block} style={{ marginBottom: tokens.sp32 }}>
-                  {/* Time block header */}
-                  <div
+                <div key={block} style={{ marginBottom: "2px" }}>
+                  {/* Time block selector button */}
+                  <button
+                    type="button"
+                    onClick={() => setActiveTimeBlock(block)}
                     style={{
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "space-between",
-                      marginBottom: tokens.sp12,
+                      width: "100%",
+                      padding: "10px var(--spacing-px-24)",
+                      border: "none",
+                      backgroundColor: isActive
+                        ? TIME_BLOCK_TINTS[block]
+                        : "transparent",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      borderLeft: isActive
+                        ? "3px solid var(--color-gold)"
+                        : "3px solid transparent",
+                      transition: "all 150ms ease",
                     }}
                   >
-                    <p
+                    <span
                       style={{
                         fontFamily: tokens.fontBody,
                         fontSize: tokens.textOverline,
-                        fontWeight: 500,
+                        fontWeight: isActive ? 600 : 500,
                         letterSpacing: "0.1em",
                         textTransform: "uppercase",
                         color: tokens.ink,
-                        opacity: 0.5,
-                        margin: 0,
+                        opacity: isActive ? 1 : 0.4,
                       }}
                     >
                       {TIME_BLOCK_LABEL[block]}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTimeBlock(block)}
-                      style={{
-                        fontFamily: tokens.fontBody,
-                        fontSize: tokens.textCaption,
-                        fontWeight: 500,
-                        color: tokens.ink,
-                        opacity: 0.5,
-                        background: "none",
-                        border: "1px solid rgba(26, 26, 24, 0.25)",
-                        borderRadius: tokens.radiusButton,
-                        padding: "4px 10px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      + Add
-                    </button>
-                  </div>
+                    </span>
 
-                  {/* Slot list */}
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: tokens.sp8,
-                    }}
-                  >
-                    {slots.length === 0 ? (
-                      <div
+                    {!isActive && slotsForBlock.length > 0 && (
+                      <span
                         style={{
-                          border: "1px dashed rgba(26, 26, 24, 0.20)",
-                          borderRadius: tokens.radiusCard,
-                          padding: tokens.sp16,
-                          textAlign: "center",
+                          fontFamily: tokens.fontBody,
+                          fontSize: tokens.textCaption,
+                          color: tokens.ink,
+                          opacity: 0.35,
                         }}
                       >
+                        {slotsForBlock.length}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Expanded slot list when active */}
+                  {isActive && (
+                    <div
+                      style={{
+                        backgroundColor: TIME_BLOCK_TINTS[block],
+                        padding: "0 var(--spacing-px-24) var(--spacing-px-12)",
+                      }}
+                    >
+                      {slotsForBlock.length === 0 ? (
                         <p
                           style={{
                             fontFamily: tokens.fontBody,
-                            fontSize: tokens.textCaption,
-                            lineHeight: "var(--leading-caption)",
+                            fontSize: tokens.textBodySm,
                             color: tokens.ink,
-                            opacity: 0.4,
-                            margin: 0,
+                            opacity: 0.35,
+                            margin: "var(--spacing-px-8) 0",
+                            fontStyle: "italic",
                           }}
                         >
-                          Nothing planned yet
+                          Nothing added yet
                         </p>
-                      </div>
-                    ) : (
-                      slots.map((slot) => (
-                        <div
-                          key={slot.id}
-                          style={{
-                            backgroundColor: "white",
-                            borderRadius: tokens.radiusCard,
-                            boxShadow: tokens.shadowCardRest,
-                            padding: tokens.sp16,
-                            display: "flex",
-                            alignItems: "flex-start",
-                            justifyContent: "space-between",
-                            gap: tokens.sp12,
-                          }}
-                        >
-                          <div style={{ minWidth: 0 }}>
-                            <p
-                              style={{
-                                fontFamily: tokens.fontBody,
-                                fontWeight: 600,
-                                fontSize: tokens.textBodyMd,
-                                lineHeight: "var(--leading-body-md)",
-                                color: tokens.ink,
-                                margin: `0 0 ${tokens.sp4} 0`,
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
-                            >
-                              {slot.entrySnapshot.name}
-                            </p>
+                      ) : (
+                        slotsForBlock.map((slot) => {
+                          const slotHook =
+                            (slot.entrySnapshot as any).editorial_hook ||
+                            (slot.entrySnapshot as any).insider_tip ||
+                            null;
+                          const neighbourhood = slot.entrySnapshot.neighbourhood;
+
+                          return (
                             <div
+                              key={slot.id}
                               style={{
                                 display: "flex",
-                                alignItems: "center",
-                                gap: tokens.sp8,
-                                flexWrap: "wrap",
+                                alignItems: "flex-start",
+                                justifyContent: "space-between",
+                                gap: "var(--spacing-px-8)",
+                                padding: "var(--spacing-px-12) 0",
+                                borderBottom: "1px solid rgba(26,26,24,0.06)",
+                                animation:
+                                  justAdded === slot.entryId
+                                    ? "sonder-fade-in-up 200ms ease forwards"
+                                    : "none",
                               }}
                             >
-                              {slot.entrySnapshot.neighbourhood && (
-                                <span
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <p
+                                  style={{
+                                    fontFamily: tokens.fontBody,
+                                    fontSize: tokens.textBodySm,
+                                    fontWeight: 600,
+                                    color: tokens.ink,
+                                    margin: "0 0 2px",
+                                  }}
+                                >
+                                  {slot.entrySnapshot.name}
+                                </p>
+                                <p
                                   style={{
                                     fontFamily: tokens.fontBody,
                                     fontSize: tokens.textCaption,
-                                    lineHeight: "var(--leading-caption)",
                                     color: tokens.ink,
                                     opacity: 0.5,
+                                    margin: "0 0 4px",
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.05em",
                                   }}
                                 >
-                                  {slot.entrySnapshot.neighbourhood}
-                                </span>
-                              )}
-                              <CategoryPill
-                                category={slot.entrySnapshot.category as Category}
-                                size="sm"
-                              />
-                            </div>
-                          </div>
+                                  {neighbourhood ? `${neighbourhood} · ` : ""}
+                                  {CATEGORY_DISPLAY[slot.entrySnapshot.category as Category]?.label}
+                                </p>
+                                {slotHook && (
+                                  <p
+                                    style={{
+                                      fontFamily: tokens.fontBody,
+                                      fontSize: tokens.textCaption,
+                                      color: tokens.ink,
+                                      opacity: 0.5,
+                                      margin: 0,
+                                      display: "-webkit-box",
+                                      WebkitLineClamp: 1,
+                                      WebkitBoxOrient: "vertical",
+                                      overflow: "hidden",
+                                    }}
+                                  >
+                                    {slotHook}
+                                  </p>
+                                )}
+                              </div>
 
-                          {/* Slot actions */}
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: tokens.sp4,
-                              flexShrink: 0,
-                            }}
-                          >
-                            {/* Swap */}
-                            <button
-                              type="button"
-                              onClick={() => setSwapTarget(slot)}
-                              aria-label={`Swap ${slot.entrySnapshot.name}`}
-                              style={{
-                                background: "none",
-                                border: "none",
-                                cursor: "pointer",
-                                color: tokens.ink,
-                                opacity: 0.35,
-                                padding: "4px",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
-                              <ArrowLeftRight size={14} />
-                            </button>
-                            {/* Remove */}
-                            <button
-                              type="button"
-                              onClick={() => removeEntry(slot.id)}
-                              aria-label={`Remove ${slot.entrySnapshot.name}`}
-                              style={{
-                                background: "none",
-                                border: "none",
-                                cursor: "pointer",
-                                color: tokens.ink,
-                                opacity: 0.35,
-                                padding: "4px",
-                                lineHeight: 1,
-                                fontSize: "18px",
-                                fontFamily: tokens.fontBody,
-                              }}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                              <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setSwapTarget(slot)}
+                                  aria-label={`Swap ${slot.entrySnapshot.name}`}
+                                  style={{
+                                    background: "none",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    color: tokens.ink,
+                                    opacity: 0.4,
+                                    padding: "4px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  <ArrowLeftRight size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeEntry(slot.id)}
+                                  aria-label={`Remove ${slot.entrySnapshot.name}`}
+                                  style={{
+                                    background: "none",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    color: tokens.ink,
+                                    opacity: 0.4,
+                                    padding: "4px",
+                                    lineHeight: 1,
+                                    fontSize: "18px",
+                                    fontFamily: tokens.fontBody,
+                                  }}
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
+          </div>
 
-            {/* ── Confirm Day button ───────────────────────────────────────── */}
+          {/* Sidebar footer: confirm day */}
+          <div
+            style={{
+              padding: "var(--spacing-px-16) var(--spacing-px-24)",
+              borderTop: "1px solid rgba(26,26,24,0.08)",
+              flexShrink: 0,
+            }}
+          >
             {!confirmedDays.has(currentDay.dayNumber) ? (
               <button
                 type="button"
                 onClick={() => handleConfirmDay(currentDay.dayNumber)}
                 style={{
-                  fontFamily: tokens.fontBody,
-                  fontWeight: 600,
-                  fontSize: tokens.textBodyMd,
+                  width: "100%",
+                  padding: "12px",
                   backgroundColor: tokens.ink,
                   color: tokens.warm,
+                  fontFamily: tokens.fontBody,
+                  fontSize: tokens.textBodySm,
+                  fontWeight: 600,
                   border: "none",
-                  WebkitAppearance: "none",
-                  appearance: "none",
-                  borderRadius: tokens.radiusButton,
-                  padding: `${tokens.sp16} ${tokens.sp32}`,
+                  borderRadius: "var(--radius-button)",
                   cursor: "pointer",
-                  width: "100%",
-                  marginTop: tokens.sp8,
-                  transition: "opacity 0.15s ease",
+                  letterSpacing: "0.02em",
                 }}
               >
                 Confirm Day {currentDay.dayNumber} →
@@ -764,7 +778,6 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
               <div
                 style={{
                   textAlign: "center",
-                  padding: tokens.sp16,
                   fontFamily: tokens.fontBody,
                   fontSize: tokens.textBodySm,
                   color: tokens.ink,
@@ -775,89 +788,44 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
               </div>
             )}
           </div>
+        </aside>
 
-          {/* ── Right: Entry browser ──────────────────────────────────────── */}
+        {/* ── Right panel ─────────────────────────────────────────────────── */}
+        <div
+          style={{
+            flex: 1,
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            backgroundColor: TIME_BLOCK_TINTS[activeTimeBlock],
+            transition: "background-color 300ms ease",
+          }}
+        >
+          {/* Right panel header */}
           <div
-            className="entry-browser"
             style={{
-              borderTop: "1px solid rgba(26, 26, 24, 0.08)",
-              paddingTop: tokens.sp32,
+              padding: "var(--spacing-px-16) var(--spacing-px-32)",
+              borderBottom: "1px solid rgba(26,26,24,0.08)",
+              flexShrink: 0,
             }}
           >
-            <h2
-              style={{
-                fontFamily: tokens.fontBody,
-                fontWeight: 600,
-                fontSize: tokens.textHeadingLg,
-                lineHeight: "var(--leading-heading-lg)",
-                color: tokens.ink,
-                margin: `0 0 ${tokens.sp8} 0`,
-              }}
-            >
-              Add to your trip
-            </h2>
-
             <p
               style={{
                 fontFamily: tokens.fontBody,
-                fontSize: tokens.textCaption,
+                fontSize: tokens.textOverline,
+                fontWeight: 600,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
                 color: tokens.ink,
                 opacity: 0.5,
-                margin: `0 0 ${tokens.sp16} 0`,
+                margin: "0 0 var(--spacing-px-12)",
               }}
             >
-              Adding to Day {selectedDay} · {TIME_BLOCK_LABEL[activeTimeBlock]}
+              {TIME_BLOCK_LABEL[activeTimeBlock]} — Day {selectedDay}
             </p>
 
-            {/* Time block selector */}
-            <div
-              style={{
-                display: "flex",
-                gap: tokens.sp8,
-                marginBottom: tokens.sp12,
-              }}
-            >
-              {TIME_BLOCKS.map((block) => {
-                const isActive = activeTimeBlock === block;
-                return (
-                  <button
-                    key={block}
-                    type="button"
-                    onClick={() => setActiveTimeBlock(block)}
-                    style={{
-                      fontFamily: tokens.fontBody,
-                      fontSize: tokens.textOverline,
-                      fontWeight: 500,
-                      letterSpacing: "0.1em",
-                      textTransform: "uppercase",
-                      borderRadius: tokens.radiusButton,
-                      padding: "4px 10px",
-                      border: isActive
-                        ? `1px solid ${tokens.ink}`
-                        : "1px solid rgba(26, 26, 24, 0.25)",
-                      backgroundColor: isActive ? tokens.ink : "transparent",
-                      color: isActive ? tokens.warm : tokens.ink,
-                      WebkitAppearance: "none",
-                      appearance: "none",
-                      cursor: "pointer",
-                      transition: "background-color 0.15s ease, color 0.15s ease",
-                    }}
-                  >
-                    {TIME_BLOCK_LABEL[block]}
-                  </button>
-                );
-              })}
-            </div>
-
             {/* Category filter pills */}
-            <div
-              style={{
-                display: "flex",
-                gap: tokens.sp8,
-                flexWrap: "wrap",
-                marginBottom: tokens.sp16,
-              }}
-            >
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
               {categories.map((cat) => {
                 const isActive = browserCategory === cat;
                 const label = cat === "all" ? "All" : CATEGORY_DISPLAY[cat].label;
@@ -867,23 +835,21 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                     type="button"
                     onClick={() => setBrowserCategory(cat)}
                     style={{
-                      fontFamily: tokens.fontBody,
-                      fontSize: tokens.textOverline,
-                      fontWeight: 500,
-                      letterSpacing: "0.1em",
-                      textTransform: "uppercase",
-                      borderRadius: tokens.radiusButton,
-                      padding: "4px 10px",
+                      padding: "4px 12px",
+                      borderRadius: "var(--radius-button)",
                       border: isActive
-                        ? `1px solid ${tokens.ink}`
-                        : "1px solid rgba(26, 26, 24, 0.25)",
+                        ? "none"
+                        : "1px solid rgba(26,26,24,0.15)",
                       backgroundColor: isActive ? tokens.ink : "transparent",
                       color: isActive ? tokens.warm : tokens.ink,
-                      WebkitAppearance: "none",
-                      appearance: "none",
+                      fontFamily: tokens.fontBody,
+                      fontSize: tokens.textCaption,
+                      fontWeight: isActive ? 500 : 400,
+                      opacity: isActive ? 1 : 0.55,
                       cursor: "pointer",
-                      whiteSpace: "nowrap",
-                      transition: "background-color 0.15s ease, color 0.15s ease",
+                      letterSpacing: "0.05em",
+                      textTransform: "uppercase",
+                      transition: "all 120ms ease",
                     }}
                   >
                     {label}
@@ -891,166 +857,170 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                 );
               })}
             </div>
+          </div>
 
-            {/* Entry list */}
+          {/* Scrollable card grid */}
+          <div
+            style={{
+              flex: 1,
+              overflowY: "auto",
+              padding: "var(--spacing-px-32)",
+            }}
+          >
             <div
               style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: tokens.sp8,
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                gap: "20px",
+                alignItems: "start",
               }}
             >
               {filteredBrowserEntries.map(({ entry }) => {
-                const added = addedEntryIds.has(entry.id);
+                const isAdded = addedEntryIds.has(entry.id);
+                const hook =
+                  entry.editorial_hook ||
+                  (entry as any).insider_tip ||
+                  null;
+                const neighbourhoodName =
+                  typeof entry.neighbourhood === "string"
+                    ? entry.neighbourhood
+                    : Array.isArray(entry.neighbourhood)
+                    ? (entry.neighbourhood[0] as any)?.display_name ?? null
+                    : (entry.neighbourhood as any)?.display_name ?? null;
+
                 return (
                   <div
                     key={entry.id}
                     style={{
-                      backgroundColor: "white",
-                      borderRadius: tokens.radiusCard,
-                      boxShadow: tokens.shadowCardRest,
-                      padding: `${tokens.sp12} ${tokens.sp16}`,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: tokens.sp12,
+                      backgroundColor: "var(--color-card)",
+                      borderRadius: "var(--radius-card)",
+                      boxShadow: isAdded ? "none" : "var(--shadow-card-rest)",
+                      overflow: "hidden",
+                      opacity: isAdded ? 0.55 : 1,
+                      transition: "opacity 200ms ease, box-shadow 200ms ease",
                     }}
                   >
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <p
-                        style={{
-                          fontFamily: tokens.fontBody,
-                          fontWeight: 600,
-                          fontSize: tokens.textBodyMd,
-                          lineHeight: "var(--leading-body-md)",
-                          color: tokens.ink,
-                          margin: `0 0 ${tokens.sp4} 0`,
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
-                      >
-                        {entry.name}
-                      </p>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: tokens.sp8,
-                          marginBottom: entry.editorial_hook ? tokens.sp4 : 0,
-                        }}
-                      >
-                        {entry.neighbourhood && (
-                          <span
+                    <Link
+                      href={`/krakow/${entry.slug}`}
+                      style={{ textDecoration: "none", display: "block", color: "inherit" }}
+                    >
+                      <EntryCardPhoto entry={entry} />
+
+                      <div style={{ padding: "14px 16px 8px" }}>
+                        {neighbourhoodName && (
+                          <p
                             style={{
                               fontFamily: tokens.fontBody,
                               fontSize: tokens.textCaption,
                               color: tokens.ink,
-                              opacity: 0.5,
-                              whiteSpace: "nowrap",
+                              opacity: 0.45,
+                              margin: "0 0 3px",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.06em",
                             }}
                           >
-                            {entry.neighbourhood}
-                          </span>
+                            {neighbourhoodName}
+                          </p>
                         )}
-                        <CategoryPill category={entry.category} size="sm" />
-                      </div>
-                      {entry.editorial_hook && (
+
                         <p
                           style={{
                             fontFamily: tokens.fontBody,
                             fontSize: tokens.textBodySm,
-                            lineHeight: "var(--leading-body-sm)",
+                            fontWeight: 600,
                             color: tokens.ink,
-                            opacity: 0.6,
-                            margin: 0,
-                            display: "-webkit-box",
-                            WebkitBoxOrient: "vertical",
-                            WebkitLineClamp: 1,
-                            overflow: "hidden",
+                            margin: "0 0 6px",
+                            lineHeight: 1.3,
                           }}
                         >
-                          {entry.editorial_hook}
+                          {entry.name}
                         </p>
+
+                        {hook && (
+                          <p
+                            style={{
+                              fontFamily: tokens.fontBody,
+                              fontSize: tokens.textCaption,
+                              color: tokens.ink,
+                              opacity: 0.6,
+                              margin: 0,
+                              display: "-webkit-box",
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: "vertical",
+                              overflow: "hidden",
+                              lineHeight: 1.45,
+                            }}
+                          >
+                            {hook}
+                          </p>
+                        )}
+                      </div>
+                    </Link>
+
+                    <div style={{ padding: "8px 16px 14px" }}>
+                      {isAdded ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const slot = itinerary.days
+                              .flatMap((d) => d.slots)
+                              .find((s) => s.entryId === entry.id);
+                            if (slot) removeEntry(slot.id);
+                          }}
+                          style={{
+                            width: "100%",
+                            padding: "8px",
+                            backgroundColor: "transparent",
+                            color: tokens.gold,
+                            border: `1px solid ${tokens.gold}`,
+                            borderRadius: "var(--radius-button)",
+                            fontFamily: tokens.fontBody,
+                            fontSize: tokens.textCaption,
+                            fontWeight: 500,
+                            cursor: "pointer",
+                            transition: "all 150ms ease",
+                            letterSpacing: "0.02em",
+                          }}
+                        >
+                          ✓ Added
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setJustAdded(entry.id);
+                            addEntry(entry, selectedDay, activeTimeBlock);
+                            setTimeout(() => setJustAdded(null), 400);
+                          }}
+                          style={{
+                            width: "100%",
+                            padding: "8px",
+                            backgroundColor: tokens.ink,
+                            color: tokens.warm,
+                            border: "none",
+                            borderRadius: "var(--radius-button)",
+                            fontFamily: tokens.fontBody,
+                            fontSize: tokens.textCaption,
+                            fontWeight: 500,
+                            cursor: "pointer",
+                            transition: "all 150ms ease",
+                            letterSpacing: "0.02em",
+                          }}
+                        >
+                          + Add
+                        </button>
                       )}
                     </div>
-
-                    {added ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!itinerary) return;
-                          const slot = itinerary.days
-                            .flatMap((d) => d.slots)
-                            .find((s) => s.entryId === entry.id);
-                          if (slot) removeEntry(slot.id);
-                        }}
-                        title="Remove from itinerary"
-                        style={{
-                          fontFamily: tokens.fontBody,
-                          fontSize: tokens.textCaption,
-                          fontWeight: 500,
-                          color: tokens.gold,
-                          background: "none",
-                          border: `1px solid ${tokens.gold}`,
-                          borderRadius: tokens.radiusButton,
-                          padding: "4px 10px",
-                          cursor: "pointer",
-                          flexShrink: 0,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        ✓ Added
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => addEntry(entry, selectedDay, activeTimeBlock)}
-                        style={{
-                          fontFamily: tokens.fontBody,
-                          fontSize: tokens.textCaption,
-                          fontWeight: 500,
-                          color: tokens.ink,
-                          background: "none",
-                          border: "1px solid rgba(26, 26, 24, 0.35)",
-                          borderRadius: tokens.radiusButton,
-                          padding: "4px 10px",
-                          cursor: "pointer",
-                          flexShrink: 0,
-                          whiteSpace: "nowrap",
-                          transition: "border-color 0.15s ease",
-                        }}
-                      >
-                        + Add
-                      </button>
-                    )}
                   </div>
                 );
               })}
             </div>
           </div>
         </div>
-
-        {/* ── Responsive layout styles ──────────────────────────────────────── */}
-        <style>{`
-          @media (min-width: 900px) {
-            .itinerary-layout {
-              grid-template-columns: 65fr 35fr !important;
-              align-items: start;
-            }
-            .entry-browser {
-              border-top: none !important;
-              padding-top: 0 !important;
-              position: sticky;
-              top: 113px;
-              max-height: calc(100vh - 130px);
-              overflow-y: auto;
-            }
-          }
-        `}</style>
+        </div>{/* end two-column body */}
       </div>
 
-      {/* ── Swap drawer — rendered at root so it escapes the inert region ── */}
+      {/* Swap drawer — outside inert region */}
       {swapTarget && (
         <SwapDrawer
           slot={swapTarget}
@@ -1062,5 +1032,66 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
         />
       )}
     </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EntryCardPhoto — photo loader for browser cards
+// ─────────────────────────────────────────────────────────────────────────────
+
+function EntryCardPhoto({ entry }: { entry: EntryCardData }) {
+  const display = CATEGORY_DISPLAY[entry.category];
+  const fallbackBg = COLOR_GROUPS[display?.colorGroup]?.bg ?? "var(--color-surface-3)";
+
+  const pipelineUrl: string | null =
+    (entry.raw_pipeline_data as any)?.photos?.selected_url ?? null;
+
+  const [photoUrl, setPhotoUrl] = useState<string | null>(pipelineUrl);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (pipelineUrl || !entry.google_place_id) return;
+    let cancelled = false;
+    fetchPlacePhotos(entry.google_place_id, 1)
+      .then((names) => {
+        if (cancelled || names.length === 0) return;
+        setPhotoUrl(buildPhotoUrl(names[0], 600));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [entry.google_place_id, pipelineUrl]);
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        aspectRatio: "3 / 2",
+        backgroundColor: error || !photoUrl ? fallbackBg : "#e8e2d9",
+        overflow: "hidden",
+        position: "relative",
+      }}
+    >
+      {photoUrl && !error && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={photoUrl}
+          alt={entry.name}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            borderRadius: 0,
+          }}
+          onError={() => setError(true)}
+        />
+      )}
+      <div style={{ position: "absolute", top: 10, left: 10, zIndex: 1 }}>
+        <CategoryPill category={entry.category} size="sm" />
+      </div>
+    </div>
   );
 }

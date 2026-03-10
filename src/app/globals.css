@@ -109,6 +109,25 @@
    ============================================================================= */
 
 :root {
+  /* Palette — mirrors @theme so var(--color-*) works in inline styles and
+     Safari, which may not expose Tailwind v4 @theme tokens as standard props */
+  --color-ink:         #1a1a18;
+  --color-warm:        #f5f0e8;
+  --color-card:        #FFFFFF;
+  --color-gold:        #C49A3C;
+  --color-apricot:     #F2A07B;
+  --color-verdigris:   #43B3AE;
+
+  --color-surface-0:   #1a1a18;
+  --color-surface-1:   #242420;
+  --color-surface-2:   #2e2e28;
+  --color-surface-3:   #3a3a32;
+
+  --shadow-card-rest:  0 1px 2px rgba(26, 26, 24, 0.06);
+  --shadow-card-hover: 0 2px 8px rgba(26, 26, 24, 0.08);
+  --shadow-modal:      0 8px 32px rgba(26, 26, 24, 0.14);
+
+  /* Legacy --sonder-* aliases (kept for any remaining references) */
   --sonder-ink:       #1a1a18;
   --sonder-warm:      #f5f0e8;
   --sonder-card:      #FFFFFF;
@@ -134,6 +153,11 @@
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+button {
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 html {
@@ -252,4 +276,132 @@ svg {
 @keyframes pq-slide-in-left {
   from { transform: translateX(-48px); opacity: 0; }
   to   { transform: translateX(0);     opacity: 1; }
+}
+
+/* =============================================================================
+   ANIMATION KEYFRAMES — Phase 2 design overhaul
+   ============================================================================= */
+
+@keyframes sonder-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sonder-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes sonder-pulse-opacity {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1; }
+}
+
+@keyframes sonder-scale-pulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.01); }
+}
+
+@keyframes sonder-slide-in-right {
+  from { opacity: 0; transform: translateX(32px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes sonder-slide-out-left {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(-32px); }
+}
+
+@keyframes sonder-slide-in-left {
+  from { opacity: 0; transform: translateX(-32px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Utility classes for common animation patterns */
+
+.sonder-animate-fade-in-up {
+  animation: sonder-fade-in-up 600ms ease forwards;
+}
+
+.sonder-animate-fade-in {
+  animation: sonder-fade-in 400ms ease forwards;
+}
+
+.sonder-animate-pulse-opacity {
+  animation: sonder-pulse-opacity 2s ease-in-out infinite;
+}
+
+/* Line-clamp utilities (supplement Tailwind's) */
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Responsive page container */
+@media (max-width: 768px) {
+  .sonder-page-container {
+    padding: 0 var(--spacing-px-24) !important;
+  }
+}
+
+/* Entry grid responsive overrides */
+@media (max-width: 1024px) {
+  .entry-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .entry-grid > *:first-child {
+    grid-column: span 2 !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .entry-grid {
+    grid-template-columns: 1fr !important;
+    padding: 0 var(--spacing-px-24) !important;
+  }
+  .entry-grid > * {
+    grid-column: span 1 !important;
+  }
+}
+
+/* City layout — sidebar collapses to top bar on mobile */
+@media (max-width: 768px) {
+  .sonder-city-layout {
+    flex-direction: column;
+  }
+  .sonder-city-sidebar {
+    width: 100% !important;
+    height: auto !important;
+    position: relative !important;
+    border-right: none !important;
+    border-bottom: 1px solid rgba(26, 26, 24, 0.08);
+    padding: var(--spacing-px-32) var(--spacing-px-24) !important;
+  }
+  .sonder-city-sidebar-nav {
+    flex-direction: row !important;
+    flex-wrap: wrap;
+    gap: 4px !important;
+  }
+}
+
+/* Prevent featured card span-2 from overflowing on single-column viewports */
+@media (max-width: 640px) {
+  .entry-grid > *:first-child {
+    grid-column: span 1 !important;
+  }
 }

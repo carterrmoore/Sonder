@@ -91,14 +91,18 @@ export function generateDays(
         );
         // 2. Any entry from top neighbourhood not yet placed
         if (!pick) pick = topPool.find((se) => !placed.has(se.entry.id));
-        // 3. Affinity match from anywhere
+        // 3. Affinity match from anywhere in the full pool
         if (!pick) {
           pick = remaining.find(
             (se) => !placed.has(se.entry.id) && affinities.includes(se.entry.category)
           );
         }
-        // 4. Any remaining entry
+        // 4. Any remaining entry from the full pool, any category.
+        //    `remaining` is all unplaced entries across every previous day;
+        //    the !placed.has() guard also excludes slots placed earlier in this day.
         if (!pick) pick = remaining.find((se) => !placed.has(se.entry.id));
+        // If still nothing: the pool is exhausted — slot legitimately stays empty.
+        // This only happens when total entries < total slots.
 
         if (pick) {
           placed.add(pick.entry.id);
