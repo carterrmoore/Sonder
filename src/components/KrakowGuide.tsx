@@ -10,6 +10,7 @@ import type { EntryCardData } from "@/lib/entries";
 import type { Category } from "@/types/pipeline";
 import type { TripPreferences } from "@/types/preferences";
 import { applyPreferences } from "@/lib/preference-filter";
+import { tokens } from "@/lib/tokens";
 
 const CATEGORY_PLURAL: Record<Category, string> = {
   restaurant:    "Restaurants",
@@ -73,30 +74,30 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
       : `${filtered.length} ${CATEGORY_PLURAL[selectedCategory].toLowerCase()}`;
 
   return (
-    <main style={{ minHeight: "100vh", backgroundColor: "var(--color-warm)" }}>
+    <main style={{ minHeight: "100vh", backgroundColor: tokens.warm }}>
 
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
       <div
         style={{
-          backgroundColor: "var(--color-ink)",
+          backgroundColor: tokens.ink,
           minHeight: "70vh",
           display: "flex",
           alignItems: "center",
-          paddingBlock: "var(--spacing-px-80)",
+          paddingBlock: tokens.sp80,
         }}
       >
         <Container narrow>
           {/* Overline */}
           <p
             style={{
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-overline)",
+              fontFamily: tokens.fontBody,
+              fontSize: tokens.textOverline,
               fontWeight: 500,
               lineHeight: "var(--leading-overline)",
               letterSpacing: "0.1em",
               textTransform: "uppercase",
-              color: "var(--color-gold)",
-              margin: "0 0 var(--spacing-px-16) 0",
+              color: tokens.gold,
+              margin: `0 0 ${tokens.sp16} 0`,
             }}
           >
             Kraków, Poland
@@ -106,8 +107,8 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
           <h1
             className="text-display-xl"
             style={{
-              color: "var(--color-warm)",
-              margin: "0 0 var(--spacing-px-24) 0",
+              color: tokens.warm,
+              margin: `0 0 ${tokens.sp24} 0`,
             }}
           >
             A city that rewards the unhurried.
@@ -116,10 +117,10 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
           {/* Subheading */}
           <p
             style={{
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-body-lg)",
+              fontFamily: tokens.fontBody,
+              fontSize: tokens.textBodyLg,
               lineHeight: "var(--leading-body-lg)",
-              color: "var(--color-warm)",
+              color: tokens.warm,
               opacity: 0.7,
               maxWidth: "480px",
               margin: 0,
@@ -134,23 +135,23 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "var(--spacing-px-12)",
+              gap: tokens.sp12,
               flexWrap: "wrap",
-              marginTop: "var(--spacing-px-24)",
+              marginTop: tokens.sp24,
             }}
           >
             <a
               href="/krakow/plan"
               style={{
                 display: "inline-block",
-                fontFamily: "var(--font-body)",
+                fontFamily: tokens.fontBody,
                 fontWeight: 600,
-                fontSize: "var(--text-body-md)",
-                backgroundColor: "var(--color-gold)",
-                color: "var(--color-ink)",
+                fontSize: tokens.textBodyMd,
+                backgroundColor: tokens.gold,
+                color: tokens.ink,
                 border: "none",
-                borderRadius: "var(--radius-button)",
-                padding: "var(--spacing-px-16) var(--spacing-px-32)",
+                borderRadius: tokens.radiusButton,
+                padding: `${tokens.sp16} ${tokens.sp32}`,
                 cursor: "pointer",
                 textDecoration: "none",
                 transition: "opacity 0.15s ease",
@@ -163,14 +164,14 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
                 href="/krakow/itinerary"
                 style={{
                   display: "inline-block",
-                  fontFamily: "var(--font-body)",
+                  fontFamily: tokens.fontBody,
                   fontWeight: 600,
-                  fontSize: "var(--text-body-md)",
+                  fontSize: tokens.textBodyMd,
                   backgroundColor: "transparent",
-                  color: "var(--color-warm)",
+                  color: tokens.warm,
                   border: "1px solid rgba(245, 240, 232, 0.35)",
-                  borderRadius: "var(--radius-button)",
-                  padding: "var(--spacing-px-16) var(--spacing-px-32)",
+                  borderRadius: tokens.radiusButton,
+                  padding: `${tokens.sp16} ${tokens.sp32}`,
                   cursor: "pointer",
                   textDecoration: "none",
                   transition: "border-color 0.15s ease",
@@ -189,7 +190,7 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
           position: "sticky",
           top: 0,
           zIndex: 10,
-          backgroundColor: "var(--color-warm)",
+          backgroundColor: tokens.warm,
           borderBottom: "1px solid rgba(26, 26, 24, 0.08)",
         }}
       >
@@ -197,8 +198,8 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
           <div
             style={{
               display: "flex",
-              gap: "var(--spacing-px-8)",
-              paddingBlock: "var(--spacing-px-12)",
+              gap: tokens.sp8,
+              paddingBlock: tokens.sp12,
               overflowX: "auto",
               scrollbarWidth: "none",
               msOverflowStyle: "none",
@@ -215,21 +216,21 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
                   type="button"
                   onClick={() => setSelectedCategory(cat)}
                   style={{
-                    fontFamily: "var(--font-body)",
-                    fontSize: "var(--text-overline)",
+                    fontFamily: tokens.fontBody,
+                    fontSize: tokens.textOverline,
                     fontWeight: 500,
                     lineHeight: "var(--leading-overline)",
                     letterSpacing: "0.1em",
                     textTransform: "uppercase",
-                    borderRadius: "var(--radius-button)",
+                    borderRadius: tokens.radiusButton,
                     padding: "6px 12px",
                     border: isActive
-                      ? "1px solid var(--color-ink)"
+                      ? `1px solid ${tokens.ink}`
                       : "1px solid rgba(26, 26, 24, 0.25)",
-                    backgroundColor: isActive
-                      ? "var(--color-ink)"
-                      : "transparent",
-                    color: isActive ? "var(--color-warm)" : "var(--color-ink)",
+                    backgroundColor: isActive ? tokens.ink : "transparent",
+                    color: isActive ? tokens.warm : tokens.ink,
+                    WebkitAppearance: "none",
+                    appearance: "none",
                     cursor: "pointer",
                     whiteSpace: "nowrap",
                     transition: "background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease",
@@ -252,19 +253,19 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              marginTop: "var(--spacing-px-16)",
-              padding: "var(--spacing-px-12) var(--spacing-px-16)",
-              backgroundColor: "color-mix(in srgb, var(--color-gold) 8%, transparent)",
-              border: "1px solid color-mix(in srgb, var(--color-gold) 25%, transparent)",
-              borderRadius: "var(--radius-button)",
+              marginTop: tokens.sp16,
+              padding: `${tokens.sp12} ${tokens.sp16}`,
+              backgroundColor: `color-mix(in srgb, ${tokens.gold} 8%, transparent)`,
+              border: `1px solid color-mix(in srgb, ${tokens.gold} 25%, transparent)`,
+              borderRadius: tokens.radiusButton,
             }}
           >
             <p
               style={{
-                fontFamily: "var(--font-body)",
-                fontSize: "var(--text-caption)",
+                fontFamily: tokens.fontBody,
+                fontSize: tokens.textCaption,
                 lineHeight: "var(--leading-caption)",
-                color: "var(--color-ink)",
+                color: tokens.ink,
                 margin: 0,
               }}
             >
@@ -272,7 +273,7 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
               <a
                 href="/krakow/plan"
                 style={{
-                  color: "var(--color-ink)",
+                  color: tokens.ink,
                   fontWeight: 600,
                   textDecoration: "none",
                 }}
@@ -288,11 +289,11 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
                 background: "none",
                 border: "none",
                 cursor: "pointer",
-                fontFamily: "var(--font-body)",
-                fontSize: "var(--text-caption)",
-                color: "var(--color-ink)",
+                fontFamily: tokens.fontBody,
+                fontSize: tokens.textCaption,
+                color: tokens.ink,
                 opacity: 0.5,
-                padding: "0 0 0 var(--spacing-px-12)",
+                padding: `0 0 0 ${tokens.sp12}`,
                 lineHeight: 1,
               }}
             >
@@ -307,11 +308,11 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
         <SectionSpacer size="md" />
         <h2
           style={{
-            fontFamily: "var(--font-body)",
-            fontSize: "var(--text-heading-lg)",
+            fontFamily: tokens.fontBody,
+            fontSize: tokens.textHeadingLg,
             fontWeight: 600,
             lineHeight: "var(--leading-heading-lg)",
-            color: "var(--color-ink)",
+            color: tokens.ink,
             margin: 0,
           }}
         >
@@ -319,12 +320,12 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
         </h2>
         <p
           style={{
-            fontFamily: "var(--font-body)",
-            fontSize: "var(--text-caption)",
+            fontFamily: tokens.fontBody,
+            fontSize: tokens.textCaption,
             lineHeight: "var(--leading-caption)",
-            color: "var(--color-ink)",
+            color: tokens.ink,
             opacity: 0.5,
-            margin: "var(--spacing-px-4) 0 0 0",
+            margin: `${tokens.sp4} 0 0 0`,
           }}
         >
           {countLabel}
@@ -338,10 +339,10 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
           <Container narrow style={{ textAlign: "center" }}>
             <p
               style={{
-                fontFamily: "var(--font-body)",
-                fontSize: "var(--text-body-md)",
+                fontFamily: tokens.fontBody,
+                fontSize: tokens.textBodyMd,
                 lineHeight: "var(--leading-body-md)",
-                color: "var(--color-ink)",
+                color: tokens.ink,
                 opacity: 0.5,
               }}
             >
@@ -351,7 +352,7 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
         ) : (
           <Grid>
             {filtered.map((se) => (
-              <EntryCard key={se.entry.id} entry={se.entry} citySlug="krakow" />
+              <EntryCard key={se.entry.id} entry={se.entry} />
             ))}
           </Grid>
         )}
@@ -362,10 +363,10 @@ export default function KrakowGuide({ entries }: KrakowGuideProps) {
       <Container>
         <p
           style={{
-            fontFamily: "var(--font-body)",
-            fontSize: "var(--text-caption)",
+            fontFamily: tokens.fontBody,
+            fontSize: tokens.textCaption,
             lineHeight: "var(--leading-caption)",
-            color: "var(--color-ink)",
+            color: tokens.ink,
             opacity: 0.4,
             textAlign: "center",
             margin: 0,

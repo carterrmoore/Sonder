@@ -1,43 +1,97 @@
 "use client";
 
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import CategoryPill from "@/components/ui/CategoryPill";
-import Container from "@/components/ui/Container";
-import type { EntryFull } from "@/lib/entries";
+import { useItinerary } from "@/hooks/useItinerary";
+import { buildPhotoUrl, fetchPlacePhotos } from "@/lib/maps";
 import {
+  CATEGORY_DISPLAY,
   PRICE_LEVEL_LABELS,
   type PriceLevel,
 } from "@/pipeline/constants";
+import type { EntryFull } from "@/lib/entries";
+import type { EntryCardData } from "@/lib/entries";
+import type { TimeBlock } from "@/types/itinerary";
+import { tokens } from "@/lib/tokens";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hero photo state
+// ─────────────────────────────────────────────────────────────────────────────
+
+type HeroPhotoState =
+  | { status: "loading" }
+  | { status: "ready"; url: string }
+  | { status: "error" };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main component
+// ─────────────────────────────────────────────────────────────────────────────
 
 interface EntryDetailProps {
   entry: EntryFull;
 }
 
 export default function EntryDetail({ entry }: EntryDetailProps) {
-  const photoUrl = entry.photos?.[0] ?? null;
+  // ── Hero photo ────────────────────────────────────────────────────────────
+  // Priority 1: pipeline-selected photo resource name stored in photos[]
+  const storedUrl: string | null = entry.photos?.[0]
+    ? buildPhotoUrl(entry.photos[0], 1600)
+    : null;
+
+  const [heroPhoto, setHeroPhoto] = useState<HeroPhotoState>(
+    storedUrl ? { status: "ready", url: storedUrl } : { status: "loading" }
+  );
+
+  useEffect(() => {
+    if (storedUrl) return;
+    if (!entry.google_place_id) {
+      setHeroPhoto({ status: "error" });
+      return;
+    }
+    let cancelled = false;
+    fetchPlacePhotos(entry.google_place_id, 1)
+      .then((names) => {
+        if (cancelled) return;
+        if (!names.length) { setHeroPhoto({ status: "error" }); return; }
+        setHeroPhoto({ status: "ready", url: buildPhotoUrl(names[0], 1600) });
+      })
+      .catch(() => { if (!cancelled) setHeroPhoto({ status: "error" }); });
+    return () => { cancelled = true; };
+  }, [entry.google_place_id, storedUrl]);
+
+  // ── Itinerary hook ────────────────────────────────────────────────────────
+  const { itinerary, addEntry } = useItinerary("krakow");
+
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const priceLabel =
+    entry.price_level != null && entry.price_level > 0
+      ? PRICE_LEVEL_LABELS[entry.price_level as PriceLevel]
+      : null;
+
+  const tags: string[] = Array.isArray(entry.tags) ? entry.tags : [];
+
+  const isInItinerary = itinerary?.days.some((d) =>
+    d.slots.some((s) => s.entryId === entry.id)
+  ) ?? false;
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        backgroundColor: "var(--color-warm)",
-      }}
-    >
-      {/* ── Hero image ─────────────────────────────────────────────────── */}
+    <div style={{ backgroundColor: tokens.warm, minHeight: "100vh" }}>
+
+      {/* ── Hero photo — full width, no border radius ── */}
       <div
         style={{
           width: "100%",
           aspectRatio: "16 / 9",
-          backgroundColor: photoUrl ? undefined : "var(--color-surface-2)",
-          position: "relative",
+          backgroundColor: tokens.ink,
           overflow: "hidden",
+          position: "relative",
         }}
       >
-        {photoUrl ? (
+        {heroPhoto.status === "ready" && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={photoUrl}
+            src={heroPhoto.url}
             alt={entry.name}
             style={{
               width: "100%",
@@ -45,147 +99,119 @@ export default function EntryDetail({ entry }: EntryDetailProps) {
               objectFit: "cover",
               display: "block",
             }}
+            onError={() => setHeroPhoto({ status: "error" })}
           />
-        ) : (
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <CategoryPill category={entry.category} size="md" />
-          </div>
         )}
+        {/* loading → dark surface; error → dark surface — no decoration */}
       </div>
 
-      {/* ── Entry header ───────────────────────────────────────────────── */}
-      <Container narrow style={{ paddingTop: "var(--spacing-px-40)" }}>
-        <div
+      {/* ── Content ── */}
+      <div
+        style={{
+          maxWidth: 720,
+          margin: "0 auto",
+          padding: `${tokens.sp48} ${tokens.sp24} ${tokens.sp96}`,
+        }}
+      >
+        {/* ── Back navigation — after hero, before venue name ── */}
+        <a
+          href="/krakow"
           style={{
-            display: "flex",
+            display: "inline-flex",
             alignItems: "center",
-            gap: "var(--spacing-px-8)",
-            marginBottom: "var(--spacing-px-12)",
+            gap: 6,
+            fontFamily: tokens.fontBody,
+            fontSize: tokens.textCaption,
+            color: tokens.ink,
+            opacity: 0.5,
+            textDecoration: "none",
+            marginBottom: tokens.sp32,
           }}
         >
-          <CategoryPill category={entry.category} size="sm" />
-          {entry.neighbourhood && (
-            <span
-              style={{
-                fontFamily: "var(--font-body)",
-                fontSize: "var(--text-caption)",
-                color: "var(--color-ink)",
-                opacity: 0.5,
-              }}
-            >
-              {entry.neighbourhood}
-            </span>
-          )}
-        </div>
+          ← Back to Kraków
+        </a>
 
+        {/* ── Venue name ── */}
         <h1
-          className="text-display-md"
           style={{
-            color: "var(--color-ink)",
-            margin: "0 0 var(--spacing-px-12) 0",
+            fontFamily: tokens.fontDisplay,
+            fontSize: tokens.textDisplaySm,
+            fontWeight: 400,
+            color: tokens.ink,
+            margin: `0 0 ${tokens.sp16}`,
+            lineHeight: 1.15,
           }}
         >
           {entry.name}
         </h1>
 
-        <p
-          style={{
-            fontFamily: "var(--font-body)",
-            fontSize: "var(--text-body-lg)",
-            lineHeight: "var(--leading-body-lg)",
-            color: "var(--color-ink)",
-            margin: 0,
-          }}
-        >
-          {entry.editorial_hook}
-        </p>
-      </Container>
-
-      {/* ── Divider ────────────────────────────────────────────────────── */}
-      <Container narrow>
-        <hr
-          style={{
-            border: "none",
-            borderTop: "1px solid rgba(26, 26, 24, 0.10)",
-            margin: "var(--spacing-px-32) 0",
-          }}
-        />
-      </Container>
-
-      {/* ── Editorial rationale ────────────────────────────────────────── */}
-      {entry.editorial_rationale && (
-        <Container narrow>
+        {/* ── Editorial hook ── */}
+        {entry.editorial_hook && (
           <p
             style={{
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-body-md)",
-              lineHeight: "var(--leading-body-md)",
-              color: "var(--color-ink)",
-              margin: "0 0 var(--spacing-px-32) 0",
+              fontFamily: tokens.fontBody,
+              fontSize: tokens.textBodyLg,
+              color: tokens.ink,
+              opacity: 0.8,
+              margin: `0 0 ${tokens.sp24}`,
+              lineHeight: 1.6,
             }}
           >
-            {entry.editorial_rationale}
+            {entry.editorial_hook}
           </p>
-        </Container>
-      )}
+        )}
 
-      {/* ── Practical info strip ───────────────────────────────────────── */}
-      <Container narrow>
+        {/* ── Metadata row ── */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "var(--spacing-px-16)",
             flexWrap: "wrap",
-            backgroundColor: "var(--color-warm)",
-            border: "1px solid rgba(26, 26, 24, 0.10)",
-            borderRadius: "var(--radius-card)",
-            padding: "var(--spacing-px-12) var(--spacing-px-16)",
-            marginBottom: "var(--spacing-px-32)",
+            gap: 12,
+            marginBottom: tokens.sp24,
           }}
         >
-          {entry.price_level != null && entry.price_level > 0 && (
-            <span
-              style={{
-                fontFamily: "var(--font-body)",
-                fontSize: "var(--text-body-sm)",
-                color: "var(--color-ink)",
-                opacity: 0.65,
-              }}
-            >
-              {PRICE_LEVEL_LABELS[entry.price_level as PriceLevel]}
-            </span>
-          )}
           {entry.neighbourhood && (
             <span
               style={{
-                fontFamily: "var(--font-body)",
-                fontSize: "var(--text-body-sm)",
-                color: "var(--color-ink)",
-                opacity: 0.65,
+                fontFamily: tokens.fontBody,
+                fontSize: tokens.textCaption,
+                color: tokens.ink,
+                opacity: 0.6,
+                backgroundColor: `color-mix(in srgb, ${tokens.ink} 8%, transparent)`,
+                padding: "3px 10px",
+                borderRadius: tokens.radiusPill,
               }}
             >
               {entry.neighbourhood}
             </span>
           )}
+
+          <CategoryPill category={entry.category} />
+
+          {priceLabel && (
+            <span
+              style={{
+                fontFamily: tokens.fontBody,
+                fontSize: tokens.textCaption,
+                color: tokens.ink,
+                opacity: 0.6,
+              }}
+            >
+              {priceLabel}
+            </span>
+          )}
+
           {entry.maps_url && (
             <a
               href={entry.maps_url}
               target="_blank"
               rel="noopener noreferrer"
               style={{
-                fontFamily: "var(--font-body)",
-                fontSize: "var(--text-caption)",
-                color: "var(--color-ink)",
-                opacity: 0.65,
+                fontFamily: tokens.fontBody,
+                fontSize: tokens.textCaption,
+                color: tokens.ink,
+                opacity: 0.6,
                 textDecoration: "underline",
                 textUnderlineOffset: "2px",
               }}
@@ -194,87 +220,199 @@ export default function EntryDetail({ entry }: EntryDetailProps) {
             </a>
           )}
         </div>
-      </Container>
 
-      {/* ── Editorial writeup ──────────────────────────────────────────── */}
-      {entry.editorial_writeup && (
-        <Container narrow>
-          <p
-            style={{
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-body-md)",
-              lineHeight: "var(--leading-body-md)",
-              color: "var(--color-ink)",
-              margin: "0 0 var(--spacing-px-32) 0",
-              whiteSpace: "pre-line",
-            }}
-          >
-            {entry.editorial_writeup}
-          </p>
-        </Container>
-      )}
-
-      {/* ── Tags ───────────────────────────────────────────────────────── */}
-      {entry.tags && entry.tags.length > 0 && (
-        <Container narrow>
+        {/* ── Tags row ── */}
+        {tags.length > 0 && (
           <div
             style={{
               display: "flex",
-              gap: "var(--spacing-px-8)",
               flexWrap: "wrap",
-              marginBottom: "var(--spacing-px-32)",
+              gap: 8,
+              marginBottom: tokens.sp32,
             }}
           >
-            {entry.tags.map((tag) => (
+            {tags.map((tag) => (
               <span
                 key={tag}
                 style={{
-                  fontFamily: "var(--font-body)",
-                  fontSize: "var(--text-caption)",
-                  lineHeight: "var(--leading-caption)",
-                  color: "var(--color-ink)",
-                  border: "1px solid rgba(26, 26, 24, 0.30)",
-                  borderRadius: "var(--radius-button)",
-                  padding: "2px 10px",
-                  whiteSpace: "nowrap",
+                  fontFamily: tokens.fontBody,
+                  fontSize: tokens.textCaption,
+                  color: tokens.ink,
+                  backgroundColor: tokens.card,
+                  borderRadius: tokens.radiusPill,
+                  padding: "8px 12px",
+                  opacity: 0.85,
                 }}
               >
                 {tag.replace(/_/g, " ")}
               </span>
             ))}
           </div>
-        </Container>
-      )}
+        )}
 
-      {/* ── Back navigation ────────────────────────────────────────────── */}
-      <Container narrow style={{ paddingBottom: "var(--spacing-px-64)" }}>
-        <Link
-          href="/krakow"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "var(--spacing-px-8)",
-            fontFamily: "var(--font-body)",
-            fontSize: "var(--text-body-sm)",
-            color: "var(--color-ink)",
-            opacity: 0.65,
-            textDecoration: "none",
-            padding: "var(--spacing-px-8) var(--spacing-px-12)",
-            borderRadius: "var(--radius-button)",
-            border: "1px solid rgba(26, 26, 24, 0.15)",
-            transition: "opacity 0.15s ease",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.opacity = "1";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.opacity = "0.65";
-          }}
-        >
-          <ArrowLeft size={14} />
-          Back to Kraków
-        </Link>
-      </Container>
-    </main>
+        {/* ── Add to itinerary ── */}
+        <AddToItineraryButton
+          entry={entry}
+          itinerary={itinerary}
+          addEntry={addEntry}
+          isInItinerary={isInItinerary}
+        />
+
+        {/* ── Editorial writeup ── */}
+        {entry.editorial_writeup && (
+          <div
+            style={{
+              fontFamily: tokens.fontBody,
+              fontSize: tokens.textBodyMd,
+              color: tokens.ink,
+              lineHeight: 1.75,
+              marginTop: tokens.sp48,
+              opacity: 0.9,
+              whiteSpace: "pre-line",
+            }}
+          >
+            {entry.editorial_writeup}
+          </div>
+        )}
+
+        {/* ── Editorial rationale ── */}
+        {entry.editorial_rationale && (
+          <p
+            style={{
+              fontFamily: tokens.fontBody,
+              fontSize: tokens.textBodyMd,
+              lineHeight: "var(--leading-body-md)",
+              color: tokens.ink,
+              opacity: 0.75,
+              marginTop: tokens.sp32,
+            }}
+          >
+            {entry.editorial_rationale}
+          </p>
+        )}
+
+        {/* ── Insider tip ── */}
+        {entry.insider_tip && (
+          <div
+            style={{
+              marginTop: tokens.sp40,
+              padding: tokens.sp24,
+              backgroundColor: tokens.card,
+              borderRadius: tokens.radiusCard,
+              borderLeft: `3px solid ${tokens.gold}`,
+            }}
+          >
+            <p
+              style={{
+                fontFamily: tokens.fontBody,
+                fontSize: tokens.textCaption,
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: tokens.gold,
+                margin: "0 0 8px",
+              }}
+            >
+              Insider tip
+            </p>
+            <p
+              style={{
+                fontFamily: tokens.fontBody,
+                fontSize: tokens.textBodyMd,
+                color: tokens.ink,
+                margin: 0,
+                lineHeight: 1.6,
+                opacity: 0.85,
+              }}
+            >
+              {entry.insider_tip}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AddToItineraryButton
+// ─────────────────────────────────────────────────────────────────────────────
+
+function AddToItineraryButton({
+  entry,
+  itinerary,
+  addEntry,
+  isInItinerary,
+}: {
+  entry: EntryFull;
+  itinerary: ReturnType<typeof useItinerary>["itinerary"];
+  addEntry: ReturnType<typeof useItinerary>["addEntry"];
+  isInItinerary: boolean;
+}) {
+  const router = useRouter();
+
+  function handleClick() {
+    if (!itinerary) {
+      router.push("/krakow/itinerary");
+      return;
+    }
+    if (isInItinerary) return;
+
+    // Build minimal EntryCardData from EntryFull for the hook
+    const entryCardData: EntryCardData = {
+      id: entry.id,
+      slug: entry.slug,
+      name: entry.name,
+      category: entry.category,
+      neighbourhood: entry.neighbourhood,
+      editorial_hook: entry.editorial_hook,
+      raw_pipeline_data: null,
+      price_level: entry.price_level,
+      tags: entry.tags,
+      google_place_id: entry.google_place_id,
+    };
+
+    // Find the first day with the fewest slots — add as morning
+    const targetDay = itinerary.days.reduce((best, d) =>
+      d.slots.length < best.slots.length ? d : best
+    , itinerary.days[0]);
+
+    // Pick a time block not yet taken on that day (morning → afternoon → evening)
+    const takenBlocks = new Set(targetDay.slots.map((s) => s.timeBlock));
+    const block: TimeBlock =
+      !takenBlocks.has("morning") ? "morning" :
+      !takenBlocks.has("afternoon") ? "afternoon" :
+      "evening";
+
+    addEntry(entryCardData, targetDay.dayNumber, block);
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      style={{
+        fontFamily: tokens.fontBody,
+        fontWeight: 500,
+        fontSize: tokens.textBodyMd,
+        color: isInItinerary ? tokens.gold : tokens.ink,
+        backgroundColor: isInItinerary
+          ? `color-mix(in srgb, ${tokens.gold} 10%, transparent)`
+          : "transparent",
+        border: isInItinerary
+          ? `1px solid ${tokens.gold}`
+          : "1px solid rgba(26, 26, 24, 0.35)",
+        borderRadius: tokens.radiusButton,
+        padding: `${tokens.sp12} ${tokens.sp24}`,
+        cursor: isInItinerary ? "default" : "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        marginBottom: tokens.sp8,
+        transition: "border-color 0.15s ease, background-color 0.15s ease",
+      }}
+    >
+      {isInItinerary ? "✓ In your itinerary" : !itinerary ? "Plan your trip →" : "+ Add to itinerary"}
+    </button>
   );
 }

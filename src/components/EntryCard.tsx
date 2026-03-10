@@ -1,198 +1,221 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Bookmark } from "lucide-react";
-import CategoryPill from "@/components/ui/CategoryPill";
-import {
-  CATEGORY_DISPLAY,
-  COLOR_GROUPS,
-  PRICE_LEVEL_LABELS,
-  type PriceLevel,
-} from "@/pipeline/constants";
+import { CATEGORY_DISPLAY, COLOR_GROUPS } from "@/pipeline/constants";
 import type { EntryCardData } from "@/lib/entries";
+import { buildPhotoUrl, fetchPlacePhotos } from "@/lib/maps";
+import CategoryPill from "@/components/ui/CategoryPill";
+import { tokens } from "@/lib/tokens";
 
-export interface EntryCardProps {
+interface EntryCardProps {
   entry: EntryCardData;
-  citySlug?: string;
-  onSave?: (id: string) => void;
-  isSaved?: boolean;
-  className?: string;
+  /** Preference score 0–100; controls a subtle visual rank signal */
+  score?: number;
 }
 
-export default function EntryCard({
-  entry,
-  citySlug = "krakow",
-  onSave,
-  isSaved = false,
-  className,
-}: EntryCardProps) {
-  const config = CATEGORY_DISPLAY[entry.category];
-  const colors = COLOR_GROUPS[config.colorGroup];
-  const photoUrl = entry.photos?.[0] ?? null;
+type PhotoState =
+  | { status: "loading" }
+  | { status: "ready"; url: string }
+  | { status: "error" };
+
+export default function EntryCard({ entry, score }: EntryCardProps) {
+  const display = CATEGORY_DISPLAY[entry.category];
+
+  // ── Photo resolution ──────────────────────────────────────────────────────
+
+  // Priority 1: pipeline-curated photo
+  const pipelineUrl: string | null =
+    (entry.raw_pipeline_data as any)?.photos?.selected_url ?? null;
+
+  const [photo, setPhoto] = useState<PhotoState>(
+    pipelineUrl ? { status: "ready", url: pipelineUrl } : { status: "loading" }
+  );
+
+  useEffect(() => {
+    // If we already have a pipeline URL, nothing to do
+    if (pipelineUrl) return;
+
+    // Priority 2: Google Maps via fetchPlacePhotos + buildPhotoUrl
+    if (!entry.google_place_id) {
+      setPhoto({ status: "error" });
+      return;
+    }
+
+    let cancelled = false;
+    fetchPlacePhotos(entry.google_place_id, 1)
+      .then((names) => {
+        if (cancelled) return;
+        if (names.length === 0) {
+          setPhoto({ status: "error" });
+          return;
+        }
+        setPhoto({ status: "ready", url: buildPhotoUrl(names[0], 800) });
+      })
+      .catch(() => {
+        if (!cancelled) setPhoto({ status: "error" });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [entry.google_place_id, pipelineUrl]);
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  const neighbourhoodName = entry.neighbourhood;
 
   return (
     <Link
-      href={`/${citySlug}/${entry.slug ?? entry.id}`}
-      className={className}
-      style={{
-        display: "block",
-        textDecoration: "none",
-        color: "inherit",
-        backgroundColor: "var(--color-card)",
-        borderRadius: "var(--radius-card)",
-        boxShadow: "var(--shadow-card-rest)",
-        overflow: "hidden",
-        transition: "box-shadow 0.2s ease",
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = "var(--shadow-card-hover)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = "var(--shadow-card-rest)";
-      }}
+      href={`/krakow/${entry.slug}`}
+      style={{ textDecoration: "none", display: "block" }}
     >
-      {/* ── Image area — 55% of card height ─────────────────────────────── */}
       <div
         style={{
-          position: "relative",
-          aspectRatio: "16 / 10",
-          backgroundColor: photoUrl ? undefined : "var(--color-surface-3)",
+          backgroundColor: tokens.card,
+          borderRadius: tokens.radiusCard,
+          boxShadow: tokens.shadowCardRest,
           overflow: "hidden",
+          transition: "box-shadow 0.2s ease",
+          cursor: "pointer",
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLDivElement).style.boxShadow = tokens.shadowCardHover;
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLDivElement).style.boxShadow = tokens.shadowCardRest;
         }}
       >
-        {photoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={photoUrl}
-            alt={entry.name}
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              display: "block",
-            }}
-          />
-        ) : (
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <CategoryPill category={entry.category} size="md" />
-          </div>
-        )}
-
-        {/* Save / bookmark icon */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onSave?.(entry.id);
-          }}
-          aria-label={isSaved ? "Remove bookmark" : "Save bookmark"}
-          style={{
-            position: "absolute",
-            top: "var(--spacing-px-12)",
-            right: "var(--spacing-px-12)",
-            backgroundColor: "rgba(26, 26, 24, 0.80)",
-            border: "none",
-            borderRadius: "var(--radius-button)",
-            padding: "6px",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "var(--color-warm)",
-            lineHeight: 0,
-          }}
-        >
-          <Bookmark
-            size={16}
-            fill={isSaved ? "currentColor" : "none"}
-            strokeWidth={1.5}
-          />
-        </button>
-      </div>
-
-      {/* ── Text area ───────────────────────────────────────────────────── */}
-      <div style={{ padding: "var(--spacing-px-16)" }}>
-        {/* Venue name — HeadingLG */}
-        <h3
-          style={{
-            fontFamily: "var(--font-body)",
-            fontSize: "var(--text-heading-lg)",
-            fontWeight: 600,
-            lineHeight: "var(--leading-heading-lg)",
-            color: "var(--color-ink)",
-            margin: "0 0 var(--spacing-px-4) 0",
-          }}
-        >
-          {entry.name}
-        </h3>
-
-        {/* Neighbourhood + category pill */}
+        {/* ── Photo area (16:9 via aspect-video) ── */}
         <div
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--spacing-px-8)",
-            marginBottom: "var(--spacing-px-8)",
+            position: "relative",
+            width: "100%",
+            aspectRatio: "16 / 9",
+            overflow: "hidden",
+            backgroundColor: tokens.card,
           }}
         >
-          {entry.neighbourhood && (
-            <span
+          {photo.status === "loading" && <ShimmerSkeleton />}
+
+          {photo.status === "ready" && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={photo.url}
+              alt={entry.name}
               style={{
-                fontFamily: "var(--font-body)",
-                fontSize: "var(--text-body-sm)",
-                color: "var(--color-ink)",
-                opacity: 0.65,
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+              }}
+              onError={() => setPhoto({ status: "error" })}
+            />
+          )}
+
+          {photo.status === "error" && (
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                backgroundColor: tokens.ink,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              {entry.neighbourhood}
-            </span>
+              <CategoryPill category={entry.category} />
+            </div>
           )}
-          <CategoryPill category={entry.category} size="sm" />
+
+          {/* Category pill — overlaid top-left on every photo state */}
+          {photo.status !== "error" && (
+            <div style={{ position: "absolute", top: 12, left: 12 }}>
+              <CategoryPill category={entry.category} />
+            </div>
+          )}
         </div>
 
-        {/* Editorial hook — 2-line clamp */}
-        <p
-          style={{
-            fontFamily: "var(--font-body)",
-            fontSize: "var(--text-body-md)",
-            fontWeight: 400,
-            lineHeight: "var(--leading-body-md)",
-            color: "var(--color-ink)",
-            margin: 0,
-            display: "-webkit-box",
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: "vertical" as const,
-            overflow: "hidden",
-          }}
-        >
-          {entry.editorial_hook}
-        </p>
-
-        {/* Price level — Caption, only if > 0 */}
-        {entry.price_level != null && entry.price_level > 0 && (
-          <span
+        {/* ── Card body ── */}
+        <div style={{ padding: tokens.sp16 }}>
+          <div
             style={{
-              display: "inline-block",
-              marginTop: "var(--spacing-px-8)",
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-caption)",
-              color: "var(--color-ink)",
-              opacity: 0.5,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              marginBottom: tokens.sp4,
             }}
           >
-            {PRICE_LEVEL_LABELS[entry.price_level as PriceLevel]}
-          </span>
-        )}
+            <span
+              style={{
+                fontFamily: tokens.fontBody,
+                fontSize: tokens.textCaption,
+                color: tokens.ink,
+                opacity: 0.5,
+              }}
+            >
+              {neighbourhoodName ?? ""}
+            </span>
+          </div>
+
+          <h3
+            style={{
+              fontFamily: tokens.fontDisplay,
+              fontSize: tokens.textHeadingSm,
+              fontWeight: 400,
+              color: tokens.ink,
+              margin: `0 0 ${tokens.sp8}`,
+              lineHeight: 1.2,
+            }}
+          >
+            {entry.name}
+          </h3>
+
+          {entry.editorial_hook && (
+            <p
+              style={{
+                fontFamily: tokens.fontBody,
+                fontSize: tokens.textBodySm,
+                color: tokens.ink,
+                opacity: 0.75,
+                margin: 0,
+                lineHeight: 1.5,
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {entry.editorial_hook}
+            </p>
+          )}
+        </div>
       </div>
     </Link>
+  );
+}
+
+// ── Shimmer skeleton ──────────────────────────────────────────────────────────
+
+function ShimmerSkeleton() {
+  return (
+    <>
+      <style>{`
+        @keyframes sonder-shimmer {
+          0%   { background-position: -400px 0; }
+          100% { background-position: 400px 0; }
+        }
+      `}</style>
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          background:
+            "linear-gradient(90deg, #ffffff 25%, #f0ede8 50%, #ffffff 75%)",
+          backgroundSize: "800px 100%",
+          animation: "sonder-shimmer 1.4s ease-in-out infinite",
+        }}
+      />
+    </>
   );
 }

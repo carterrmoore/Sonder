@@ -14,6 +14,7 @@ import type { EntryCardData } from "@/lib/entries";
 import type { TripPreferences } from "@/types/preferences";
 import type { ItinerarySlot, TimeBlock } from "@/types/itinerary";
 import type { Category } from "@/types/pipeline";
+import { tokens } from "@/lib/tokens";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -51,11 +52,13 @@ function SetupTile({ label, selected, onClick }: SetupTileProps) {
       onClick={onClick}
       style={{
         border: selected
-          ? "2px solid var(--color-gold)"
+          ? `2px solid ${tokens.gold}`
           : "1px solid rgba(245, 240, 232, 0.20)",
         backgroundColor: selected ? "rgba(196, 154, 60, 0.10)" : "transparent",
-        borderRadius: "var(--radius-card)",
-        padding: "var(--spacing-px-16) var(--spacing-px-20)",
+        WebkitAppearance: "none",
+        appearance: "none",
+        borderRadius: tokens.radiusCard,
+        padding: `${tokens.sp16} 20px`,
         cursor: "pointer",
         textAlign: "left",
         width: "100%",
@@ -65,11 +68,11 @@ function SetupTile({ label, selected, onClick }: SetupTileProps) {
       <span
         style={{
           display: "block",
-          fontFamily: "var(--font-body)",
+          fontFamily: tokens.fontBody,
           fontWeight: 600,
-          fontSize: "var(--text-body-md)",
+          fontSize: tokens.textBodyMd,
           lineHeight: "var(--leading-body-md)",
-          color: "var(--color-warm)",
+          color: tokens.warm,
         }}
       >
         {label}
@@ -181,8 +184,8 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
     [entries]
   );
 
-  // Filtered browser entries
-  const browserEntries = useMemo(
+  // Filtered browser entries — sorted by preference score (applyPreferences returns desc)
+  const filteredBrowserEntries = useMemo(
     () =>
       browserCategory === "all"
         ? scoredEntries
@@ -190,11 +193,16 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
     [scoredEntries, browserCategory]
   );
 
-  // Set of entry IDs already in the itinerary
+  // Set of entry IDs placed in the itinerary across ALL days
   const addedEntryIds = useMemo(() => {
     if (!itinerary) return new Set<string>();
-    return new Set(itinerary.days.flatMap((d) => d.slots.map((s) => s.entryId)));
+    return new Set(
+      itinerary.days.flatMap((d) => d.slots.map((s) => s.entryId).filter(Boolean))
+    );
   }, [itinerary]);
+
+  // Alias — used when passed to SwapDrawer
+  const placedEntryIds = addedEntryIds;
 
   // Check if all days are confirmed — triggers summary after short delay
   useEffect(() => {
@@ -236,10 +244,24 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
   }, [swapTarget]);
 
   // ── Swap alternatives ────────────────────────────────────────────────────
+  // Exclude all placed entries across all days, not just the current day.
   const swapAlternatives = useMemo(() => {
     if (!swapTarget) return [];
-    return buildAlternatives(swapTarget, scoredEntries, addedEntryIds);
-  }, [swapTarget, scoredEntries, addedEntryIds]);
+    const origNeighbourhood = swapTarget.entrySnapshot.neighbourhood;
+    const available = scoredEntries.filter(
+      (se) =>
+        se.entry.id !== swapTarget.entryId &&
+        !placedEntryIds.has(se.entry.id) &&
+        se.entry.category !== "accommodation"
+    );
+    const sameNeighbourhood = available.filter(
+      (se) => se.entry.neighbourhood === origNeighbourhood && origNeighbourhood
+    );
+    const other = available.filter(
+      (se) => se.entry.neighbourhood !== origNeighbourhood || !origNeighbourhood
+    );
+    return [...sameNeighbourhood, ...other].slice(0, 8);
+  }, [swapTarget, scoredEntries, placedEntryIds]);
 
   // ── State A — empty / setup ──────────────────────────────────────────────
   if (!itinerary) {
@@ -250,24 +272,24 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
         style={{
           position: "fixed",
           inset: 0,
-          backgroundColor: "var(--color-ink)",
+          backgroundColor: tokens.ink,
           overflow: "auto",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          paddingBlock: "var(--spacing-px-96)",
+          paddingBlock: tokens.sp96,
         }}
       >
         <div
           style={{
             width: "100%",
             maxWidth: "560px",
-            paddingInline: "var(--spacing-px-24)",
+            paddingInline: tokens.sp24,
           }}
         >
           <h1
             className="text-display-md"
-            style={{ color: "var(--color-warm)", margin: "0 0 var(--spacing-px-32) 0" }}
+            style={{ color: tokens.warm, margin: `0 0 ${tokens.sp32} 0` }}
           >
             Plan your Kraków.
           </h1>
@@ -275,12 +297,12 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
           {hasSpecificDates && preferences?.arrival && preferences?.departure ? (
             <p
               style={{
-                fontFamily: "var(--font-body)",
-                fontSize: "var(--text-body-md)",
+                fontFamily: tokens.fontBody,
+                fontSize: tokens.textBodyMd,
                 lineHeight: "var(--leading-body-md)",
-                color: "var(--color-warm)",
+                color: tokens.warm,
                 opacity: 0.7,
-                margin: "0 0 var(--spacing-px-32) 0",
+                margin: `0 0 ${tokens.sp32} 0`,
               }}
             >
               Your trip: {formatDate(preferences.arrival)} →{" "}
@@ -291,12 +313,12 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
             <>
               <p
                 style={{
-                  fontFamily: "var(--font-body)",
-                  fontSize: "var(--text-body-md)",
+                  fontFamily: tokens.fontBody,
+                  fontSize: tokens.textBodyMd,
                   lineHeight: "var(--leading-body-md)",
-                  color: "var(--color-warm)",
+                  color: tokens.warm,
                   opacity: 0.7,
-                  margin: "0 0 var(--spacing-px-24) 0",
+                  margin: `0 0 ${tokens.sp24} 0`,
                 }}
               >
                 How long are you staying?
@@ -305,8 +327,8 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                 style={{
                   display: "flex",
                   flexDirection: "column",
-                  gap: "var(--spacing-px-12)",
-                  marginBottom: "var(--spacing-px-32)",
+                  gap: tokens.sp12,
+                  marginBottom: tokens.sp32,
                 }}
               >
                 {TRIP_LENGTH_OPTIONS.map(({ label, value }) => (
@@ -326,6 +348,11 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
             disabled={!canStart}
             onClick={() => {
               if (!resolvedTripLength) return;
+              console.log('initItinerary called', {
+                tripLength: resolvedTripLength,
+                scoredEntriesCount: scoredEntries.length,
+                firstEntry: scoredEntries[0]?.entry?.name,
+              });
               initItinerary(
                 resolvedTripLength,
                 preferences?.arrival ?? null,
@@ -333,14 +360,16 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
               );
             }}
             style={{
-              fontFamily: "var(--font-body)",
+              fontFamily: tokens.fontBody,
               fontWeight: 600,
-              fontSize: "var(--text-body-md)",
-              backgroundColor: canStart ? "var(--color-gold)" : "rgba(196, 154, 60, 0.25)",
-              color: canStart ? "var(--color-ink)" : "rgba(26, 26, 24, 0.40)",
+              fontSize: tokens.textBodyMd,
+              backgroundColor: canStart ? tokens.gold : "rgba(196, 154, 60, 0.25)",
+              color: canStart ? tokens.ink : "rgba(26, 26, 24, 0.40)",
               border: "none",
-              borderRadius: "var(--radius-button)",
-              padding: "var(--spacing-px-16) var(--spacing-px-32)",
+              WebkitAppearance: "none",
+              appearance: "none",
+              borderRadius: tokens.radiusButton,
+              padding: `${tokens.sp16} ${tokens.sp32}`,
               cursor: canStart ? "pointer" : "not-allowed",
               width: "100%",
               transition: "background-color 0.2s ease, color 0.2s ease",
@@ -353,10 +382,10 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
             href={`/${citySlug}`}
             style={{
               display: "block",
-              marginTop: "var(--spacing-px-16)",
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-body-sm)",
-              color: "var(--color-warm)",
+              marginTop: tokens.sp16,
+              fontFamily: tokens.fontBody,
+              fontSize: tokens.textBodySm,
+              color: tokens.warm,
               opacity: 0.5,
               textDecoration: "none",
               textAlign: "center",
@@ -389,7 +418,7 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
     <>
       <div
         ref={mainRef}
-        style={{ minHeight: "100vh", backgroundColor: "var(--color-warm)" }}
+        style={{ minHeight: "100vh", backgroundColor: tokens.warm }}
       >
         {/* ── Nav bar ─────────────────────────────────────────────────────── */}
         <div
@@ -397,21 +426,21 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
             position: "sticky",
             top: 0,
             zIndex: 20,
-            backgroundColor: "var(--color-warm)",
+            backgroundColor: tokens.warm,
             borderBottom: "1px solid rgba(26, 26, 24, 0.08)",
-            padding: "var(--spacing-px-12) var(--spacing-px-24)",
+            padding: `${tokens.sp12} ${tokens.sp24}`,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            gap: "var(--spacing-px-16)",
+            gap: tokens.sp16,
           }}
         >
           <a
             href={`/${citySlug}`}
             style={{
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-body-sm)",
-              color: "var(--color-ink)",
+              fontFamily: tokens.fontBody,
+              fontSize: tokens.textBodySm,
+              color: tokens.ink,
               opacity: 0.5,
               textDecoration: "none",
             }}
@@ -420,10 +449,10 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
           </a>
           <p
             style={{
-              fontFamily: "var(--font-body)",
+              fontFamily: tokens.fontBody,
               fontWeight: 600,
-              fontSize: "var(--text-body-sm)",
-              color: "var(--color-ink)",
+              fontSize: tokens.textBodySm,
+              color: tokens.ink,
               margin: 0,
             }}
           >
@@ -435,16 +464,16 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
         {/* ── Day tab strip ───────────────────────────────────────────────── */}
         <div
           style={{
-            backgroundColor: "var(--color-warm)",
+            backgroundColor: tokens.warm,
             borderBottom: "1px solid rgba(26, 26, 24, 0.08)",
-            paddingInline: "var(--spacing-px-24)",
+            paddingInline: tokens.sp24,
           }}
         >
           <div
             style={{
               display: "flex",
-              gap: "var(--spacing-px-8)",
-              paddingBlock: "var(--spacing-px-12)",
+              gap: tokens.sp8,
+              paddingBlock: tokens.sp12,
               overflowX: "auto",
               scrollbarWidth: "none",
             }}
@@ -458,22 +487,24 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                   type="button"
                   onClick={() => setSelectedDay(d.dayNumber)}
                   style={{
-                    fontFamily: "var(--font-body)",
-                    fontSize: "var(--text-overline)",
+                    fontFamily: tokens.fontBody,
+                    fontSize: tokens.textOverline,
                     fontWeight: 500,
                     letterSpacing: "0.1em",
                     textTransform: "uppercase",
-                    borderRadius: "var(--radius-button)",
+                    borderRadius: tokens.radiusButton,
                     padding: "6px 12px",
                     border: active
-                      ? "1px solid var(--color-ink)"
+                      ? `1px solid ${tokens.ink}`
                       : "1px solid rgba(26, 26, 24, 0.25)",
                     backgroundColor: active
-                      ? "var(--color-ink)"
+                      ? tokens.ink
                       : confirmed
-                      ? "color-mix(in srgb, var(--color-gold) 12%, transparent)"
+                      ? "rgba(196, 154, 60, 0.12)"
                       : "transparent",
-                    color: active ? "var(--color-warm)" : "var(--color-ink)",
+                    color: active ? tokens.warm : tokens.ink,
+                    WebkitAppearance: "none",
+                    appearance: "none",
                     cursor: "pointer",
                     whiteSpace: "nowrap",
                     flexShrink: 0,
@@ -505,9 +536,9 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
             gridTemplateColumns: "1fr",
             maxWidth: "1280px",
             margin: "0 auto",
-            paddingInline: "var(--spacing-px-24)",
-            paddingBlock: "var(--spacing-px-32)",
-            gap: "var(--spacing-px-40)",
+            paddingInline: tokens.sp24,
+            paddingBlock: tokens.sp32,
+            gap: tokens.sp40,
           }}
           className="itinerary-layout"
         >
@@ -517,24 +548,24 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
               const slots = currentDay.slots.filter((s) => s.timeBlock === block);
 
               return (
-                <div key={block} style={{ marginBottom: "var(--spacing-px-32)" }}>
+                <div key={block} style={{ marginBottom: tokens.sp32 }}>
                   {/* Time block header */}
                   <div
                     style={{
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "space-between",
-                      marginBottom: "var(--spacing-px-12)",
+                      marginBottom: tokens.sp12,
                     }}
                   >
                     <p
                       style={{
-                        fontFamily: "var(--font-body)",
-                        fontSize: "var(--text-overline)",
+                        fontFamily: tokens.fontBody,
+                        fontSize: tokens.textOverline,
                         fontWeight: 500,
                         letterSpacing: "0.1em",
                         textTransform: "uppercase",
-                        color: "var(--color-ink)",
+                        color: tokens.ink,
                         opacity: 0.5,
                         margin: 0,
                       }}
@@ -545,14 +576,14 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                       type="button"
                       onClick={() => setActiveTimeBlock(block)}
                       style={{
-                        fontFamily: "var(--font-body)",
-                        fontSize: "var(--text-caption)",
+                        fontFamily: tokens.fontBody,
+                        fontSize: tokens.textCaption,
                         fontWeight: 500,
-                        color: "var(--color-ink)",
+                        color: tokens.ink,
                         opacity: 0.5,
                         background: "none",
                         border: "1px solid rgba(26, 26, 24, 0.25)",
-                        borderRadius: "var(--radius-button)",
+                        borderRadius: tokens.radiusButton,
                         padding: "4px 10px",
                         cursor: "pointer",
                       }}
@@ -566,24 +597,24 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                     style={{
                       display: "flex",
                       flexDirection: "column",
-                      gap: "var(--spacing-px-8)",
+                      gap: tokens.sp8,
                     }}
                   >
                     {slots.length === 0 ? (
                       <div
                         style={{
                           border: "1px dashed rgba(26, 26, 24, 0.20)",
-                          borderRadius: "var(--radius-card)",
-                          padding: "var(--spacing-px-16)",
+                          borderRadius: tokens.radiusCard,
+                          padding: tokens.sp16,
                           textAlign: "center",
                         }}
                       >
                         <p
                           style={{
-                            fontFamily: "var(--font-body)",
-                            fontSize: "var(--text-caption)",
+                            fontFamily: tokens.fontBody,
+                            fontSize: tokens.textCaption,
                             lineHeight: "var(--leading-caption)",
-                            color: "var(--color-ink)",
+                            color: tokens.ink,
                             opacity: 0.4,
                             margin: 0,
                           }}
@@ -597,24 +628,24 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                           key={slot.id}
                           style={{
                             backgroundColor: "white",
-                            borderRadius: "var(--radius-card)",
-                            boxShadow: "var(--shadow-card-rest)",
-                            padding: "var(--spacing-px-16)",
+                            borderRadius: tokens.radiusCard,
+                            boxShadow: tokens.shadowCardRest,
+                            padding: tokens.sp16,
                             display: "flex",
                             alignItems: "flex-start",
                             justifyContent: "space-between",
-                            gap: "var(--spacing-px-12)",
+                            gap: tokens.sp12,
                           }}
                         >
                           <div style={{ minWidth: 0 }}>
                             <p
                               style={{
-                                fontFamily: "var(--font-body)",
+                                fontFamily: tokens.fontBody,
                                 fontWeight: 600,
-                                fontSize: "var(--text-body-md)",
+                                fontSize: tokens.textBodyMd,
                                 lineHeight: "var(--leading-body-md)",
-                                color: "var(--color-ink)",
-                                margin: "0 0 var(--spacing-px-4) 0",
+                                color: tokens.ink,
+                                margin: `0 0 ${tokens.sp4} 0`,
                                 whiteSpace: "nowrap",
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
@@ -626,17 +657,17 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                               style={{
                                 display: "flex",
                                 alignItems: "center",
-                                gap: "var(--spacing-px-8)",
+                                gap: tokens.sp8,
                                 flexWrap: "wrap",
                               }}
                             >
                               {slot.entrySnapshot.neighbourhood && (
                                 <span
                                   style={{
-                                    fontFamily: "var(--font-body)",
-                                    fontSize: "var(--text-caption)",
+                                    fontFamily: tokens.fontBody,
+                                    fontSize: tokens.textCaption,
                                     lineHeight: "var(--leading-caption)",
-                                    color: "var(--color-ink)",
+                                    color: tokens.ink,
                                     opacity: 0.5,
                                   }}
                                 >
@@ -654,7 +685,7 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                           <div
                             style={{
                               display: "flex",
-                              gap: "var(--spacing-px-4)",
+                              gap: tokens.sp4,
                               flexShrink: 0,
                             }}
                           >
@@ -667,7 +698,7 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                                 background: "none",
                                 border: "none",
                                 cursor: "pointer",
-                                color: "var(--color-ink)",
+                                color: tokens.ink,
                                 opacity: 0.35,
                                 padding: "4px",
                                 display: "flex",
@@ -686,12 +717,12 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                                 background: "none",
                                 border: "none",
                                 cursor: "pointer",
-                                color: "var(--color-ink)",
+                                color: tokens.ink,
                                 opacity: 0.35,
                                 padding: "4px",
                                 lineHeight: 1,
                                 fontSize: "18px",
-                                fontFamily: "var(--font-body)",
+                                fontFamily: tokens.fontBody,
                               }}
                             >
                               ×
@@ -711,17 +742,19 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                 type="button"
                 onClick={() => handleConfirmDay(currentDay.dayNumber)}
                 style={{
-                  fontFamily: "var(--font-body)",
+                  fontFamily: tokens.fontBody,
                   fontWeight: 600,
-                  fontSize: "var(--text-body-md)",
-                  backgroundColor: "var(--color-ink)",
-                  color: "var(--color-warm)",
+                  fontSize: tokens.textBodyMd,
+                  backgroundColor: tokens.ink,
+                  color: tokens.warm,
                   border: "none",
-                  borderRadius: "var(--radius-button)",
-                  padding: "var(--spacing-px-16) var(--spacing-px-32)",
+                  WebkitAppearance: "none",
+                  appearance: "none",
+                  borderRadius: tokens.radiusButton,
+                  padding: `${tokens.sp16} ${tokens.sp32}`,
                   cursor: "pointer",
                   width: "100%",
-                  marginTop: "var(--spacing-px-8)",
+                  marginTop: tokens.sp8,
                   transition: "opacity 0.15s ease",
                 }}
               >
@@ -731,10 +764,10 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
               <div
                 style={{
                   textAlign: "center",
-                  padding: "var(--spacing-px-16)",
-                  fontFamily: "var(--font-body)",
-                  fontSize: "var(--text-body-sm)",
-                  color: "var(--color-ink)",
+                  padding: tokens.sp16,
+                  fontFamily: tokens.fontBody,
+                  fontSize: tokens.textBodySm,
+                  color: tokens.ink,
                   opacity: 0.5,
                 }}
               >
@@ -748,17 +781,17 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
             className="entry-browser"
             style={{
               borderTop: "1px solid rgba(26, 26, 24, 0.08)",
-              paddingTop: "var(--spacing-px-32)",
+              paddingTop: tokens.sp32,
             }}
           >
             <h2
               style={{
-                fontFamily: "var(--font-body)",
+                fontFamily: tokens.fontBody,
                 fontWeight: 600,
-                fontSize: "var(--text-heading-lg)",
+                fontSize: tokens.textHeadingLg,
                 lineHeight: "var(--leading-heading-lg)",
-                color: "var(--color-ink)",
-                margin: "0 0 var(--spacing-px-8) 0",
+                color: tokens.ink,
+                margin: `0 0 ${tokens.sp8} 0`,
               }}
             >
               Add to your trip
@@ -766,11 +799,11 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
 
             <p
               style={{
-                fontFamily: "var(--font-body)",
-                fontSize: "var(--text-caption)",
-                color: "var(--color-ink)",
+                fontFamily: tokens.fontBody,
+                fontSize: tokens.textCaption,
+                color: tokens.ink,
                 opacity: 0.5,
-                margin: "0 0 var(--spacing-px-16) 0",
+                margin: `0 0 ${tokens.sp16} 0`,
               }}
             >
               Adding to Day {selectedDay} · {TIME_BLOCK_LABEL[activeTimeBlock]}
@@ -780,8 +813,8 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
             <div
               style={{
                 display: "flex",
-                gap: "var(--spacing-px-8)",
-                marginBottom: "var(--spacing-px-12)",
+                gap: tokens.sp8,
+                marginBottom: tokens.sp12,
               }}
             >
               {TIME_BLOCKS.map((block) => {
@@ -792,18 +825,20 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                     type="button"
                     onClick={() => setActiveTimeBlock(block)}
                     style={{
-                      fontFamily: "var(--font-body)",
-                      fontSize: "var(--text-overline)",
+                      fontFamily: tokens.fontBody,
+                      fontSize: tokens.textOverline,
                       fontWeight: 500,
                       letterSpacing: "0.1em",
                       textTransform: "uppercase",
-                      borderRadius: "var(--radius-button)",
+                      borderRadius: tokens.radiusButton,
                       padding: "4px 10px",
                       border: isActive
-                        ? "1px solid var(--color-ink)"
+                        ? `1px solid ${tokens.ink}`
                         : "1px solid rgba(26, 26, 24, 0.25)",
-                      backgroundColor: isActive ? "var(--color-ink)" : "transparent",
-                      color: isActive ? "var(--color-warm)" : "var(--color-ink)",
+                      backgroundColor: isActive ? tokens.ink : "transparent",
+                      color: isActive ? tokens.warm : tokens.ink,
+                      WebkitAppearance: "none",
+                      appearance: "none",
                       cursor: "pointer",
                       transition: "background-color 0.15s ease, color 0.15s ease",
                     }}
@@ -818,9 +853,9 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
             <div
               style={{
                 display: "flex",
-                gap: "var(--spacing-px-8)",
+                gap: tokens.sp8,
                 flexWrap: "wrap",
-                marginBottom: "var(--spacing-px-16)",
+                marginBottom: tokens.sp16,
               }}
             >
               {categories.map((cat) => {
@@ -832,18 +867,20 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                     type="button"
                     onClick={() => setBrowserCategory(cat)}
                     style={{
-                      fontFamily: "var(--font-body)",
-                      fontSize: "var(--text-overline)",
+                      fontFamily: tokens.fontBody,
+                      fontSize: tokens.textOverline,
                       fontWeight: 500,
                       letterSpacing: "0.1em",
                       textTransform: "uppercase",
-                      borderRadius: "var(--radius-button)",
+                      borderRadius: tokens.radiusButton,
                       padding: "4px 10px",
                       border: isActive
-                        ? "1px solid var(--color-ink)"
+                        ? `1px solid ${tokens.ink}`
                         : "1px solid rgba(26, 26, 24, 0.25)",
-                      backgroundColor: isActive ? "var(--color-ink)" : "transparent",
-                      color: isActive ? "var(--color-warm)" : "var(--color-ink)",
+                      backgroundColor: isActive ? tokens.ink : "transparent",
+                      color: isActive ? tokens.warm : tokens.ink,
+                      WebkitAppearance: "none",
+                      appearance: "none",
                       cursor: "pointer",
                       whiteSpace: "nowrap",
                       transition: "background-color 0.15s ease, color 0.15s ease",
@@ -860,34 +897,34 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
               style={{
                 display: "flex",
                 flexDirection: "column",
-                gap: "var(--spacing-px-8)",
+                gap: tokens.sp8,
               }}
             >
-              {browserEntries.map(({ entry }) => {
+              {filteredBrowserEntries.map(({ entry }) => {
                 const added = addedEntryIds.has(entry.id);
                 return (
                   <div
                     key={entry.id}
                     style={{
                       backgroundColor: "white",
-                      borderRadius: "var(--radius-card)",
-                      boxShadow: "var(--shadow-card-rest)",
-                      padding: "var(--spacing-px-12) var(--spacing-px-16)",
+                      borderRadius: tokens.radiusCard,
+                      boxShadow: tokens.shadowCardRest,
+                      padding: `${tokens.sp12} ${tokens.sp16}`,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "space-between",
-                      gap: "var(--spacing-px-12)",
+                      gap: tokens.sp12,
                     }}
                   >
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <p
                         style={{
-                          fontFamily: "var(--font-body)",
+                          fontFamily: tokens.fontBody,
                           fontWeight: 600,
-                          fontSize: "var(--text-body-md)",
+                          fontSize: tokens.textBodyMd,
                           lineHeight: "var(--leading-body-md)",
-                          color: "var(--color-ink)",
-                          margin: "0 0 var(--spacing-px-4) 0",
+                          color: tokens.ink,
+                          margin: `0 0 ${tokens.sp4} 0`,
                           whiteSpace: "nowrap",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
@@ -899,16 +936,16 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                         style={{
                           display: "flex",
                           alignItems: "center",
-                          gap: "var(--spacing-px-8)",
-                          marginBottom: entry.editorial_hook ? "var(--spacing-px-4)" : 0,
+                          gap: tokens.sp8,
+                          marginBottom: entry.editorial_hook ? tokens.sp4 : 0,
                         }}
                       >
                         {entry.neighbourhood && (
                           <span
                             style={{
-                              fontFamily: "var(--font-body)",
-                              fontSize: "var(--text-caption)",
-                              color: "var(--color-ink)",
+                              fontFamily: tokens.fontBody,
+                              fontSize: tokens.textCaption,
+                              color: tokens.ink,
                               opacity: 0.5,
                               whiteSpace: "nowrap",
                             }}
@@ -921,10 +958,10 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                       {entry.editorial_hook && (
                         <p
                           style={{
-                            fontFamily: "var(--font-body)",
-                            fontSize: "var(--text-body-sm)",
+                            fontFamily: tokens.fontBody,
+                            fontSize: tokens.textBodySm,
                             lineHeight: "var(--leading-body-sm)",
-                            color: "var(--color-ink)",
+                            color: tokens.ink,
                             opacity: 0.6,
                             margin: 0,
                             display: "-webkit-box",
@@ -950,13 +987,13 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                         }}
                         title="Remove from itinerary"
                         style={{
-                          fontFamily: "var(--font-body)",
-                          fontSize: "var(--text-caption)",
+                          fontFamily: tokens.fontBody,
+                          fontSize: tokens.textCaption,
                           fontWeight: 500,
-                          color: "var(--color-gold)",
+                          color: tokens.gold,
                           background: "none",
-                          border: "1px solid var(--color-gold)",
-                          borderRadius: "var(--radius-button)",
+                          border: `1px solid ${tokens.gold}`,
+                          borderRadius: tokens.radiusButton,
                           padding: "4px 10px",
                           cursor: "pointer",
                           flexShrink: 0,
@@ -970,13 +1007,13 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                         type="button"
                         onClick={() => addEntry(entry, selectedDay, activeTimeBlock)}
                         style={{
-                          fontFamily: "var(--font-body)",
-                          fontSize: "var(--text-caption)",
+                          fontFamily: tokens.fontBody,
+                          fontSize: tokens.textCaption,
                           fontWeight: 500,
-                          color: "var(--color-ink)",
+                          color: tokens.ink,
                           background: "none",
                           border: "1px solid rgba(26, 26, 24, 0.35)",
-                          borderRadius: "var(--radius-button)",
+                          borderRadius: tokens.radiusButton,
                           padding: "4px 10px",
                           cursor: "pointer",
                           flexShrink: 0,
@@ -1018,6 +1055,7 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
         <SwapDrawer
           slot={swapTarget}
           alternatives={swapAlternatives}
+          placedEntryIds={placedEntryIds}
           onSwap={(slotId, newEntry) => swapEntry(slotId, newEntry)}
           onRemove={(slotId) => removeEntry(slotId)}
           onClose={() => setSwapTarget(null)}

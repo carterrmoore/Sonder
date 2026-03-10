@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import CategoryPill from "@/components/ui/CategoryPill";
 import type { ItinerarySlot } from "@/types/itinerary";
 import type { ScoredEntry } from "@/lib/preference-filter";
 import type { Category } from "@/types/pipeline";
+import { buildPhotoUrl, fetchPlacePhotos } from "@/lib/maps";
+import { CATEGORY_DISPLAY } from "@/pipeline/constants";
+import { tokens } from "@/lib/tokens";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Contextual swap tag logic
@@ -48,10 +51,18 @@ function swapTag(
 interface SwapDrawerProps {
   slot: ItinerarySlot;
   alternatives: ScoredEntry[];
+  placedEntryIds: Set<string>;
   onSwap: (slotId: string, newEntry: ScoredEntry["entry"]) => void;
   onRemove: (slotId: string) => void;
   onClose: () => void;
 }
+
+// Internal type for alternative cards with resolved photo state
+type AltPhotoState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; url: string }
+  | { status: "error" };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Component
@@ -60,10 +71,16 @@ interface SwapDrawerProps {
 export default function SwapDrawer({
   slot,
   alternatives,
+  placedEntryIds,
   onSwap,
   onRemove,
   onClose,
 }: SwapDrawerProps) {
+  // Exclude any entries placed across all days (belt-and-suspenders over the
+  // pre-filtering done in ItineraryBuilder, guards against stale prop values).
+  const filteredAlternatives = alternatives.filter(
+    (a) => !placedEntryIds.has(a.entry.id) || a.entry.id === slot.entryId
+  );
   const drawerRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -117,7 +134,7 @@ export default function SwapDrawer({
         style={{
           position: "fixed",
           zIndex: 50,
-          backgroundColor: "var(--color-ink)",
+          backgroundColor: tokens.ink,
           overflowY: "auto",
         }}
         className="swap-drawer"
@@ -128,16 +145,16 @@ export default function SwapDrawer({
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "var(--spacing-px-20) var(--spacing-px-24)",
+            padding: `20px ${tokens.sp24}`,
             borderBottom: "1px solid rgba(245, 240, 232, 0.10)",
           }}
         >
           <p
             style={{
-              fontFamily: "var(--font-body)",
+              fontFamily: tokens.fontBody,
               fontWeight: 600,
-              fontSize: "var(--text-body-md)",
-              color: "var(--color-warm)",
+              fontSize: tokens.textBodyMd,
+              color: tokens.warm,
               margin: 0,
             }}
           >
@@ -155,12 +172,12 @@ export default function SwapDrawer({
               background: "none",
               border: "none",
               cursor: "pointer",
-              color: "var(--color-warm)",
+              color: tokens.warm,
               opacity: 0.5,
               fontSize: "22px",
               lineHeight: 1,
               padding: "4px",
-              fontFamily: "var(--font-body)",
+              fontFamily: tokens.fontBody,
             }}
           >
             ×
@@ -169,10 +186,10 @@ export default function SwapDrawer({
 
         <div
           style={{
-            padding: "var(--spacing-px-20) var(--spacing-px-24)",
+            padding: `20px ${tokens.sp24}`,
             display: "flex",
             flexDirection: "column",
-            gap: "var(--spacing-px-12)",
+            gap: tokens.sp12,
           }}
         >
           {/* Keep original */}
@@ -180,14 +197,14 @@ export default function SwapDrawer({
             type="button"
             onClick={onClose}
             style={{
-              fontFamily: "var(--font-body)",
+              fontFamily: tokens.fontBody,
               fontWeight: 500,
-              fontSize: "var(--text-body-sm)",
-              color: "var(--color-warm)",
+              fontSize: tokens.textBodySm,
+              color: tokens.warm,
               background: "none",
               border: "1px solid rgba(245, 240, 232, 0.20)",
-              borderRadius: "var(--radius-button)",
-              padding: "var(--spacing-px-12) var(--spacing-px-16)",
+              borderRadius: tokens.radiusButton,
+              padding: `${tokens.sp12} ${tokens.sp16}`,
               cursor: "pointer",
               textAlign: "left",
             }}
@@ -200,138 +217,25 @@ export default function SwapDrawer({
             style={{
               height: "1px",
               backgroundColor: "rgba(245, 240, 232, 0.08)",
-              marginBlock: "var(--spacing-px-4)",
+              marginBlock: tokens.sp4,
             }}
           />
 
           {/* Alternative cards */}
-          {alternatives.map((alt) => {
-            const tag = swapTag(slot, alt);
-            return (
-              <div
-                key={alt.entry.id}
-                style={{
-                  backgroundColor: "rgba(245, 240, 232, 0.05)",
-                  border: "1px solid rgba(245, 240, 232, 0.10)",
-                  borderRadius: "var(--radius-card)",
-                  padding: "var(--spacing-px-16)",
-                }}
-              >
-                {/* Name */}
-                <p
-                  style={{
-                    fontFamily: "var(--font-body)",
-                    fontWeight: 600,
-                    fontSize: "var(--text-body-md)",
-                    lineHeight: "var(--leading-body-md)",
-                    color: "var(--color-warm)",
-                    margin: "0 0 var(--spacing-px-4) 0",
-                  }}
-                >
-                  {alt.entry.name}
-                </p>
-
-                {/* Neighbourhood + pill */}
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "var(--spacing-px-8)",
-                    marginBottom: "var(--spacing-px-8)",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  {alt.entry.neighbourhood && (
-                    <span
-                      style={{
-                        fontFamily: "var(--font-body)",
-                        fontSize: "var(--text-caption)",
-                        color: "var(--color-warm)",
-                        opacity: 0.5,
-                      }}
-                    >
-                      {alt.entry.neighbourhood}
-                    </span>
-                  )}
-                  <CategoryPill
-                    category={alt.entry.category as Category}
-                    size="sm"
-                  />
-                </div>
-
-                {/* Hook */}
-                {alt.entry.editorial_hook && (
-                  <p
-                    style={{
-                      fontFamily: "var(--font-body)",
-                      fontSize: "var(--text-body-sm)",
-                      lineHeight: "var(--leading-body-sm)",
-                      color: "var(--color-warm)",
-                      opacity: 0.6,
-                      margin: "0 0 var(--spacing-px-12) 0",
-                      display: "-webkit-box",
-                      WebkitBoxOrient: "vertical",
-                      WebkitLineClamp: 1,
-                      overflow: "hidden",
-                    }}
-                  >
-                    {alt.entry.editorial_hook}
-                  </p>
-                )}
-
-                {/* Tag + action row */}
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "var(--spacing-px-8)",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontFamily: "var(--font-body)",
-                      fontSize: "var(--text-caption)",
-                      color: "var(--color-warm)",
-                      opacity: 0.45,
-                      fontStyle: "italic",
-                    }}
-                  >
-                    {tag}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSwap(slot.id, alt.entry);
-                      onClose();
-                    }}
-                    style={{
-                      fontFamily: "var(--font-body)",
-                      fontWeight: 600,
-                      fontSize: "var(--text-caption)",
-                      backgroundColor: "var(--color-gold)",
-                      color: "var(--color-ink)",
-                      border: "none",
-                      borderRadius: "var(--radius-button)",
-                      padding: "6px 14px",
-                      cursor: "pointer",
-                      whiteSpace: "nowrap",
-                      flexShrink: 0,
-                    }}
-                  >
-                    Swap →
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+          {filteredAlternatives.map((alt) => (
+            <AlternativeCard
+              key={alt.entry.id}
+              alt={alt}
+              onSwap={() => { onSwap(slot.id, alt.entry); onClose(); }}
+            />
+          ))}
 
           {/* Divider */}
           <div
             style={{
               height: "1px",
               backgroundColor: "rgba(245, 240, 232, 0.08)",
-              marginBlock: "var(--spacing-px-4)",
+              marginBlock: tokens.sp4,
             }}
           />
 
@@ -343,14 +247,14 @@ export default function SwapDrawer({
               onClose();
             }}
             style={{
-              fontFamily: "var(--font-body)",
-              fontSize: "var(--text-body-sm)",
+              fontFamily: tokens.fontBody,
+              fontSize: tokens.textBodySm,
               fontWeight: 500,
               color: "rgba(245, 240, 232, 0.40)",
               background: "none",
               border: "none",
               cursor: "pointer",
-              padding: "var(--spacing-px-8) 0",
+              padding: `${tokens.sp8} 0`,
               textAlign: "left",
               textDecoration: "underline",
               textUnderlineOffset: "3px",
@@ -361,7 +265,7 @@ export default function SwapDrawer({
         </div>
       </div>
 
-      {/* ── Responsive drawer styles ──────────────────────────────────────── */}
+      {/* ── Responsive drawer styles ── */}
       <style>{`
         .swap-drawer {
           bottom: 0;
@@ -393,5 +297,137 @@ export default function SwapDrawer({
         }
       `}</style>
     </>
+  );
+}
+
+// ── AlternativeCard ───────────────────────────────────────────────────────────
+// Thumbnail (64×64) + name + meta. Photo loads async, non-blocking.
+
+interface AlternativeCardProps {
+  alt: ScoredEntry;
+  onSwap: (entryId: string) => void;
+}
+
+function AlternativeCard({ alt, onSwap }: AlternativeCardProps) {
+  const { entry } = alt;
+
+  const pipelineUrl: string | null =
+    (entry.raw_pipeline_data as any)?.photos?.selected_url ?? null;
+
+  const [photoState, setPhotoState] = useState<AltPhotoState>(
+    pipelineUrl ? { status: "ready", url: pipelineUrl } : { status: "idle" }
+  );
+
+  useEffect(() => {
+    if (pipelineUrl) return; // already resolved
+    if (!entry.google_place_id) return; // no fallback possible
+
+    let cancelled = false;
+    setPhotoState({ status: "loading" });
+
+    fetchPlacePhotos(entry.google_place_id, 1)
+      .then((names) => {
+        if (cancelled) return;
+        if (names.length === 0) {
+          setPhotoState({ status: "error" });
+          return;
+        }
+        setPhotoState({ status: "ready", url: buildPhotoUrl(names[0], 800) });
+      })
+      .catch(() => {
+        if (!cancelled) setPhotoState({ status: "error" });
+      });
+
+    return () => { cancelled = true; };
+  }, [entry.google_place_id, pipelineUrl]);
+
+  const display = CATEGORY_DISPLAY[entry.category];
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: tokens.sp12,
+        padding: `${tokens.sp12} ${tokens.sp16}`,
+        cursor: "pointer",
+        borderBottom: `1px solid color-mix(in srgb, ${tokens.ink} 8%, transparent)`,
+      }}
+      onClick={() => onSwap(entry.id)}
+    >
+      {/* 64×64 thumbnail */}
+      <div
+        style={{
+          width: 64,
+          height: 64,
+          borderRadius: 4,
+          overflow: "hidden",
+          flexShrink: 0,
+          backgroundColor: tokens.card,
+        }}
+      >
+        {photoState.status === "ready" && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={photoState.url}
+            alt={entry.name}
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+            onError={() => setPhotoState({ status: "error" })}
+          />
+        )}
+        {/* idle / loading / error → empty colored block, no fallback stub */}
+        {(photoState.status === "idle" || photoState.status === "loading") && (
+          <div style={{ width: "100%", height: "100%", backgroundColor: tokens.card }} />
+        )}
+      </div>
+
+      {/* Name + meta */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p
+          style={{
+            fontFamily: tokens.fontDisplay,
+            fontSize: tokens.textBodyMd,
+            fontWeight: 400,
+            color: tokens.ink,
+            margin: "0 0 2px",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {entry.name}
+        </p>
+        <p
+          style={{
+            fontFamily: tokens.fontBody,
+            fontSize: tokens.textCaption,
+            color: tokens.ink,
+            opacity: 0.55,
+            margin: 0,
+          }}
+        >
+          {display.label}{entry.neighbourhood ? ` · ${entry.neighbourhood}` : ""}
+        </p>
+      </div>
+
+      {/* Swap CTA */}
+      <button
+        style={{
+          fontFamily: tokens.fontBody,
+          fontSize: tokens.textCaption,
+          fontWeight: 500,
+          color: tokens.ink,
+          background: "none",
+          border: `1px solid color-mix(in srgb, ${tokens.ink} 25%, transparent)`,
+          borderRadius: tokens.radiusButton,
+          padding: "4px 10px",
+          cursor: "pointer",
+          flexShrink: 0,
+        }}
+        onClick={(e) => { e.stopPropagation(); onSwap(entry.id); }}
+      >
+        Swap
+      </button>
+    </div>
   );
 }
