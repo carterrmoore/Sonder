@@ -12,6 +12,7 @@ import {
   type PriceLevel,
 } from "@/pipeline/constants";
 import type { EntryFull } from "@/lib/entries";
+import { BookingSection, Stay22Script } from "@/components/BookingSection";
 import type { EntryCardData } from "@/lib/entries";
 import type { TimeBlock } from "@/types/itinerary";
 import { tokens } from "@/lib/tokens";
@@ -334,7 +335,20 @@ export default function EntryDetail({ entry }: EntryDetailProps) {
             </p>
           </div>
         )}
+
+        {/* ── Booking section ── */}
+        <BookingSection
+          options={{
+            category: entry.category,
+            viator_product_code: entry.viator_product_code ?? null,
+            gyg_listing_url: entry.gyg_listing_url ?? null,
+            google_place_id: entry.google_place_id ?? null,
+            entry_name: entry.name,
+          }}
+        />
       </div>
+
+      <Stay22Script />
     </div>
   );
 }

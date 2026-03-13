@@ -405,3 +405,125 @@ svg {
     grid-column: span 1 !important;
   }
 }
+
+/* Article prose styles — Step 8 */
+
+/* =============================================================================
+   ARTICLE PROSE STYLES
+   Add these to globals.css after the existing component classes.
+   Applied to .article-prose via dangerouslySetInnerHTML.
+   ============================================================================= */
+
+.article-prose {
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: var(--text-body-md);
+  line-height: 1.7;
+}
+
+.article-prose p {
+  margin: 0 0 var(--spacing-px-24) 0;
+  opacity: 0.82;
+}
+
+.article-prose p:last-child {
+  margin-bottom: 0;
+}
+
+.article-prose h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-display-md);
+  font-weight: 400;
+  line-height: var(--leading-display-md);
+  color: var(--color-ink);
+  margin: var(--spacing-px-48) 0 var(--spacing-px-16) 0;
+}
+
+.article-prose h3 {
+  font-family: var(--font-body);
+  font-size: var(--text-heading-md);
+  font-weight: 600;
+  line-height: var(--leading-heading-md);
+  color: var(--color-ink);
+  margin: var(--spacing-px-32) 0 var(--spacing-px-12) 0;
+}
+
+.article-prose strong {
+  font-weight: 600;
+  opacity: 1;
+}
+
+.article-prose em {
+  font-style: italic;
+}
+
+/* Pullquote / block callout — editorial moment */
+.article-prose blockquote {
+  border-left: 3px solid var(--color-gold);
+  margin: var(--spacing-px-32) 0;
+  padding: var(--spacing-px-12) var(--spacing-px-24);
+  font-family: var(--font-display);
+  font-size: var(--text-heading-md);
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--color-ink);
+  opacity: 0.88;
+}
+
+.article-prose blockquote p {
+  margin: 0;
+  opacity: 1;
+}
+
+/* Inline links — subtle underline, no bright colours */
+.article-prose a {
+  color: var(--color-ink);
+  text-decoration: underline;
+  text-decoration-color: rgba(26, 26, 24, 0.3);
+  text-underline-offset: 3px;
+  transition: text-decoration-color 0.15s ease;
+}
+
+.article-prose a:hover {
+  text-decoration-color: var(--color-ink);
+}
+
+/* Unordered lists — minimal, editorial */
+.article-prose ul {
+  list-style: none;
+  margin: 0 0 var(--spacing-px-24) 0;
+  padding: 0;
+}
+
+.article-prose ul li {
+  padding: var(--spacing-px-4) 0 var(--spacing-px-4) var(--spacing-px-16);
+  position: relative;
+  opacity: 0.82;
+  font-size: var(--text-body-md);
+  line-height: 1.65;
+}
+
+.article-prose ul li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.7em;
+  width: 4px;
+  height: 4px;
+  background-color: var(--color-gold);
+  border-radius: 50%;
+}
+
+/* Separator rule */
+.article-prose hr {
+  border: none;
+  border-top: 1px solid rgba(26, 26, 24, 0.1);
+  margin: var(--spacing-px-48) 0;
+}
+
+/* Lead paragraph — first paragraph can be styled larger */
+.article-prose .lead {
+  font-size: var(--text-body-lg);
+  line-height: 1.65;
+  opacity: 0.78;
+}

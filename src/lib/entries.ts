@@ -50,6 +50,8 @@ export interface EntryFull {
   what_to_order: string | null;
   why_it_made_the_cut: string | null;
   google_place_id: string | null;
+  viator_product_code: string | null;
+  gyg_listing_url: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -129,6 +131,8 @@ function rowToEntryFull(data: Record<string, unknown>): EntryFull {
     what_to_order: (data.what_to_order as string) ?? null,
     why_it_made_the_cut: (data.why_it_made_the_cut as string) ?? null,
     google_place_id: (data.google_place_id as string) ?? null,
+    viator_product_code: (data.viator_product_code as string) ?? null,
+    gyg_listing_url: (data.gyg_listing_url as string) ?? null,
   };
 }
 
