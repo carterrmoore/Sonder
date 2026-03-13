@@ -223,7 +223,7 @@ function AffiliateDisclosure() {
       }}
     >
       Booking links earn Sonder a small commission at no extra cost to you.
-      Commission never influences which places are included — every entry earns
+      Commission never influences which places are included. Every entry earns
       its place through the same filter regardless.{" "}
       <a
         href="/about/affiliate-disclosure"

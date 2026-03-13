@@ -6,6 +6,8 @@
 // taxonomy match object is internal to stage1-viator.ts and not exposed.
 
 import { NextRequest, NextResponse } from "next/server";
+
+export const maxDuration = 30; // seconds
 import { resolveViatorDestinationId } from "@/pipeline/stage1-viator";
 
 export async function GET(req: NextRequest) {
