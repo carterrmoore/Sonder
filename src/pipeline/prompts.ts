@@ -319,8 +319,16 @@ If a candidate scores 55-64 AND you detect highly emotional, specific language a
   soul_exception_justification: one sentence naming the signal and reviewer count.
 The soul exception is rare. Generic positive sentiment does not qualify.
 
-BOOKING TIER:
-1 = Walk in. 2 = Recommended to book. 3 = Must book in advance. 4 = Specialist booking required.
+BOOKING TIER: Assign based on price_level from Google Maps data provided.
+- price_level 1 (Inexpensive) → booking_tier 1
+- price_level 2 (Moderate) → booking_tier 2
+- price_level 3 (Expensive) → booking_tier 3
+- price_level 4 (Very Expensive) → booking_tier 4
+- price_level null or 0 → infer from review language:
+  explicit "hostel", "dorm", "budget" → tier 1
+  "luxury", "5-star", brand names like "Luxury Collection", "Marriott", "Hilton" → tier 4
+  premium boutique language without budget signals → tier 3
+  everything else → tier 2
 
 PASS THRESHOLD: 65+ passes. 55-64 borderline (check soul exception). Below 55 rejects.
 
