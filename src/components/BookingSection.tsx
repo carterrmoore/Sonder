@@ -37,8 +37,6 @@ function buildViatorUrl(productCode: string): string {
   return `https://www.viator.com/tours/${productCode}?pid=${pid}&mcid=42383&medium=api&medium_version=selector`;
 }
 
-const DISCLOSURE =
-  "We may earn a small commission if you book through our links. It does not affect our recommendations — we only link to places that earned their place here.";
 
 // ── BookingSection ────────────────────────────────────────────────────────────
 
@@ -224,7 +222,19 @@ function AffiliateDisclosure() {
         lineHeight: 1.5,
       }}
     >
-      {DISCLOSURE}
+      Booking links earn Sonder a small commission at no extra cost to you.
+      Commission never influences which places are included — every entry earns
+      its place through the same filter regardless.{" "}
+      <a
+        href="/about/affiliate-disclosure"
+        style={{
+          color: tokens.ink,
+          opacity: 0.7,
+          textDecoration: "underline",
+        }}
+      >
+        Learn more
+      </a>
     </p>
   );
 }
