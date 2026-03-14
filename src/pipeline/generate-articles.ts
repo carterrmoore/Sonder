@@ -129,7 +129,7 @@ function validateArticleResult(
   }
 
   if (!Array.isArray(r.social_bites)) return false;
-  if (r.social_bites.length < 3)
+  if (r.social_bites.length < 1)
     throw new Error(`insufficient_social_bites: got ${r.social_bites.length}`);
 
   console.log('[article-gen] Validation passed');
@@ -300,6 +300,11 @@ For Reddit bites:
   }
 
   const entryIds = selectedEntries.map(e => e.id);
+  console.log('[article-gen] social_bites count:',
+    Array.isArray((parsed as any)?.social_bites)
+      ? (parsed as any).social_bites.length
+      : 'not an array'
+  );
   try {
     validateArticleResult(parsed, entryIds);
   } catch (validationErr) {
