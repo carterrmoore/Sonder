@@ -130,8 +130,9 @@ function validateArticleResult(
 
   if (!Array.isArray(r.social_bites)) return false;
   if (r.social_bites.length < 3)
-    throw new Error('insufficient_social_bites');
+    throw new Error(`insufficient_social_bites: got ${r.social_bites.length}`);
 
+  console.log('[article-gen] Validation passed');
   return true;
 }
 
@@ -289,6 +290,8 @@ For Reddit bites:
     .replace(/\s*```$/i, '')
     .trim();
 
+  console.log('[article-gen] Raw Claude response:', cleaned.slice(0, 500));
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(cleaned);
@@ -297,8 +300,13 @@ For Reddit bites:
   }
 
   const entryIds = selectedEntries.map(e => e.id);
-  if (!validateArticleResult(parsed, entryIds)) {
-    throw new Error('validation_failed');
+  try {
+    validateArticleResult(parsed, entryIds);
+  } catch (validationErr) {
+    const reason = validationErr instanceof Error
+      ? validationErr.message
+      : String(validationErr);
+    throw new Error(`validation_failed: ${reason}`);
   }
 
   const result = parsed as {
