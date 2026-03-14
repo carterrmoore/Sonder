@@ -390,15 +390,30 @@ export async function generateArticlesForCity(
       booking_tier,
       suggested_tags,
       raw_pipeline_data,
-      neighbourhood_id,
-      neighbourhoods (
-        name
-      )
+      neighbourhood_id
     `)
     .eq('city_id', cityId)
     .eq('review_status', 'approved');
 
   if (entriesError) throw new Error(`entries_fetch_failed: ${entriesError.message}`);
+
+  const neighbourhoodIds = [
+    ...new Set(
+      (entries ?? [])
+        .map(e => e.neighbourhood_id)
+        .filter(Boolean)
+    )
+  ];
+
+  const { data: neighbourhoods } = await supabase
+    .from('neighbourhoods')
+    .select('id, name')
+    .in('id', neighbourhoodIds);
+
+  const neighbourhoodMap = Object.fromEntries(
+    (neighbourhoods ?? []).map(n => [n.id, n.name])
+  );
+
   if (!entries || entries.length === 0) {
     return {
       city_id: cityId,
@@ -420,11 +435,7 @@ export async function generateArticlesForCity(
   }> = {};
 
   for (const entry of entries) {
-    const nbhdRaw = entry.neighbourhoods;
-    const nbhd = Array.isArray(nbhdRaw)
-      ? (nbhdRaw[0] as { name: string } | undefined)
-      : (nbhdRaw as unknown as { name: string } | null);
-    const neighbourhood = nbhd?.name ?? 'Unknown';
+    const neighbourhood = neighbourhoodMap[entry.neighbourhood_id] ?? 'Unknown';
     entryMeta[entry.id] = {
       category: entry.category,
       neighbourhood,
@@ -521,13 +532,7 @@ export async function generateArticlesForCity(
     name: e.name,
     slug: e.slug,
     category: e.category,
-    neighbourhood_name: (() => {
-      const n = e.neighbourhoods;
-      const nbhd = Array.isArray(n)
-        ? (n[0] as { name: string } | undefined)
-        : (n as unknown as { name: string } | null);
-      return nbhd?.name ?? 'Unknown';
-    })(),
+    neighbourhood_name: neighbourhoodMap[e.neighbourhood_id] ?? 'Unknown',
     quality_score: e.quality_score,
     insider_tip: e.insider_tip,
     what_to_order: e.what_to_order,
