@@ -88,7 +88,79 @@ WHAT CORRECT REDDIT SOUNDS LIKE:
 WHAT WRONG REDDIT SOUNDS LIKE:
 "Hey r/krakow! I've put together a guide to the best traditional Polish food spots in the city. Whether you're on a budget or looking to splurge, we've got you covered!"
 
-Return a single JSON object. No markdown wrapper. No preamble. Valid JSON only.`;
+OUTPUT FORMAT — THIS IS NON-NEGOTIABLE:
+Return a single JSON object. No markdown. No prose.
+No explanation. The JSON must have exactly this shape:
+
+{
+  "article": {
+    "headline": "string — max 80 chars",
+    "meta_description": "string — 150-165 chars, includes city name",
+    "slug": "string — 4-8 lowercase hyphenated words",
+    "read_time_minutes": number,
+    "lead_paragraph": "string — first sentence answers the question directly",
+    "body_sections": [
+      {
+        "section_type": "prose",
+        "content": "string — one paragraph of prose",
+        "referenced_entry_id": null
+      },
+      {
+        "section_type": "entry_reference",
+        "content": "string — prose that leads into the entry link",
+        "referenced_entry_id": "the exact entry id string from the entries provided"
+      },
+      {
+        "section_type": "skip_it_callout",
+        "content": "string — Skip [Name]. [Why]. [Better option] is [reason] and is a [X]-minute walk.",
+        "referenced_entry_id": null
+      }
+    ],
+    "closing_paragraph": "string or null"
+  },
+  "social_bites": [
+    {
+      "platform": "threads",
+      "goal": "brand_awareness",
+      "copy": "string — under 500 chars including hashtags",
+      "reddit_title": null,
+      "reddit_subreddits": null,
+      "includes_link": false
+    },
+    {
+      "platform": "threads",
+      "goal": "drive_traffic",
+      "copy": "string — under 500 chars including hashtags",
+      "reddit_title": null,
+      "reddit_subreddits": null,
+      "includes_link": true
+    },
+    {
+      "platform": "reddit",
+      "goal": "local_knowledge",
+      "copy": "string — 150-400 words, prose paragraphs only",
+      "reddit_title": "string — reads like a genuine subreddit post title",
+      "reddit_subreddits": ["r/krakow", "r/poland", "r/travel"],
+      "includes_link": false
+    },
+    {
+      "platform": "reddit",
+      "goal": "spark_discussion",
+      "copy": "string — 150-400 words, prose paragraphs only",
+      "reddit_title": "string — reads like a genuine subreddit post title",
+      "reddit_subreddits": ["r/krakow", "r/poland", "r/travel"],
+      "includes_link": false
+    }
+  ]
+}
+
+body_sections MUST be an array of section objects as shown
+above. NEVER return body as a plain string. NEVER omit
+body_sections. The array must have at least 3 items.
+
+social_bites MUST be an array of exactly 4 objects as shown
+above — 2 threads bites followed by 2 reddit bites. NEVER
+return social_bites as anything other than this array.`;
 
 // ── Validate Claude's response ────────────────────────────────────────────
 function validateArticleResult(
