@@ -268,7 +268,7 @@ For Reddit bites:
   // Call Claude with prompt caching on system prompt
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 4000,
+    max_tokens: 8000,
     system: [
       {
         type: 'text',
@@ -278,6 +278,15 @@ For Reddit bites:
     ],
     messages: [{ role: 'user', content: userPrompt }],
   });
+
+  console.log('[article-gen] API response:', JSON.stringify({
+    stop_reason: response.stop_reason,
+    content_blocks: response.content.length,
+    first_block_type: response.content[0]?.type,
+    first_block_length: response.content[0]?.type === 'text'
+      ? (response.content[0] as any).text?.length
+      : 0,
+  }));
 
   const rawText = response.content
     .filter(b => b.type === 'text')
