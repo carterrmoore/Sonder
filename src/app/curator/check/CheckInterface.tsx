@@ -67,11 +67,15 @@ export default function CheckInterface({ q1, q2, q3, curatorName }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showRejectMenu, setShowRejectMenu] = useState(false)
   const [showNominate, setShowNominate] = useState(false)
+  const [showHookWarning, setShowHookWarning] = useState(false)
   const noteRef = useRef<HTMLTextAreaElement>(null)
 
   const currentEntries = allQueues[activeQueue]
   const currentIndex = indices[activeQueue]
   const currentEntry = currentEntries[currentIndex]
+  const currentEditorialHook = currentEntry
+    ? (currentEntry.editorial_hook ?? currentEntry.raw_pipeline_data?.stage4_result?.editorial_hook ?? null)
+    : null
 
   // Session timer
   useEffect(() => {
@@ -110,6 +114,7 @@ export default function CheckInterface({ q1, q2, q3, curatorName }: Props) {
   const advanceQueue = useCallback(() => {
     setNote('')
     setEditMode(false)
+    setShowHookWarning(false)
     setIndices(prev => ({
       ...prev,
       [activeQueue]: prev[activeQueue] + 1
@@ -119,6 +124,7 @@ export default function CheckInterface({ q1, q2, q3, curatorName }: Props) {
   const goBack = useCallback(() => {
     setNote('')
     setEditMode(false)
+    setShowHookWarning(false)
     setIndices(prev => ({
       ...prev,
       [activeQueue]: Math.max(0, prev[activeQueue] - 1)
@@ -174,6 +180,9 @@ export default function CheckInterface({ q1, q2, q3, curatorName }: Props) {
 
       if (res.ok) {
         // Update the local entry data so the card reflects the edit immediately
+        currentEntry.editorial_hook = editedFields.editorial_hook ?? currentEntry.editorial_hook
+        currentEntry.editorial_rationale = editedFields.editorial_rationale ?? currentEntry.editorial_rationale
+        currentEntry.editorial_writeup = editedFields.editorial_writeup ?? currentEntry.editorial_writeup
         currentEntry.insider_tip = editedFields.insider_tip ?? currentEntry.insider_tip
         currentEntry.what_to_order = editedFields.what_to_order ?? currentEntry.what_to_order
         currentEntry.why_it_made_the_cut = editedFields.why_it_made_the_cut ?? currentEntry.why_it_made_the_cut
@@ -198,11 +207,11 @@ export default function CheckInterface({ q1, q2, q3, curatorName }: Props) {
         if (tag === 'TEXTAREA' || tag === 'INPUT') return
         if (editMode) return
         switch (e.key.toLowerCase()) {
-          case 'a': e.preventDefault(); submitAction('approve'); break
+          case 'a': e.preventDefault(); if (!currentEditorialHook) { setShowHookWarning(true) } else { submitAction('approve') } break
           case 'r': e.preventDefault(); setShowRejectMenu(true); break
           case 'f': e.preventDefault(); submitAction('flag'); break
           case 'n': e.preventDefault(); advanceQueue(); break
-          case 'e': e.preventDefault(); setEditMode(true); break
+          case 'e': e.preventDefault(); setEditMode(true); setShowHookWarning(false); break
           case 'arrowleft': e.preventDefault(); goBack(); break
           case 'arrowright': e.preventDefault(); advanceQueue(); break
         }
@@ -333,11 +342,12 @@ export default function CheckInterface({ q1, q2, q3, curatorName }: Props) {
           }}
         />
       ) : (
-        <div className="flex h-[calc(100vh-105px)]">
+        <div className="flex h-[calc(100vh-145px)]">
           {/* Left panel */}
           <div className="flex-1 flex flex-col overflow-hidden border-r" style={{ borderColor: C.border }}>
-            <div className="flex-1 overflow-y-auto px-8 py-6">
-              <EntryCard
+            <div className="flex-1 overflow-y-auto px-8 py-6 flex flex-col items-center">
+              <div className="w-full max-w-3xl">
+                <EntryCard
   key={currentEntry.id}
   entry={currentEntry}
   queueType={activeQueue}
@@ -346,7 +356,9 @@ export default function CheckInterface({ q1, q2, q3, curatorName }: Props) {
     saveEdit(fields)
   }}
   onEditCancel={() => setEditMode(false)}
+  showHookWarning={showHookWarning}
 />
+              </div>
             </div>
             <ActionBar
               onAction={submitAction}
@@ -355,12 +367,14 @@ export default function CheckInterface({ q1, q2, q3, curatorName }: Props) {
               note={note}
               onNoteChange={setNote}
               editMode={editMode}
-              onEditToggle={() => setEditMode(e => !e)}
+              onEditToggle={() => { setEditMode(e => !e); setShowHookWarning(false) }}
               isSubmitting={isSubmitting}
               noteRef={noteRef}
               entry={currentEntry}
               showRejectMenu={showRejectMenu}
               onRejectMenuChange={setShowRejectMenu}
+              editorialHook={currentEditorialHook}
+              onApproveBlocked={() => setShowHookWarning(true)}
             />
           </div>
 
@@ -386,7 +400,7 @@ function QueueComplete({ queueKey, count, onNext }: {
   const hasNext = queueKey !== 'q3'
 
   return (
-    <div className="flex items-center justify-center h-[calc(100vh-105px)]">
+    <div className="flex items-center justify-center h-[calc(100vh-145px)]">
       <div className="text-center space-y-4">
         <p className="text-base font-['system-ui']" style={{ color: C.text }}>
           {labels[queueKey]} complete — {count} items reviewed.

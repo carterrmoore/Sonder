@@ -38,6 +38,7 @@ type Props = {
   editMode: boolean
   onEditSave: (fields: Record<string, unknown>) => void
   onEditCancel: () => void
+  showHookWarning?: boolean
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -69,12 +70,13 @@ const CRITERION_LABELS: Record<string, string> = {
   platform_local_disconnect: 'Platform / local disconnect',
 }
 
-export default function EntryCard({ entry, queueType, editMode, onEditSave, onEditCancel }: Props) {
+export default function EntryCard({ entry, queueType, editMode, onEditSave, onEditCancel, showHookWarning }: Props) {
   const rpd = entry.raw_pipeline_data ?? {}
   const gate0 = rpd.gate0 ?? {}
   const gate1 = rpd.gate1 ?? {}
   const gate2 = rpd.gate2 ?? {}
   const stage3 = rpd.stage3 ?? {}
+  const stage4 = rpd.stage4_result ?? {}
   const editorial = rpd.editorial ?? {}
   const ratings = rpd.aggregate_ratings ?? {}
 
@@ -85,7 +87,16 @@ export default function EntryCard({ entry, queueType, editMode, onEditSave, onEd
 
   const triggeredCriteria = (gate1.criteria ?? []).filter((c: any) => c.triggered)
 
+  // Resolved editorial v1.4 fields — entry-level column takes priority over pipeline data
+  const editorialHook = entry.editorial_hook ?? stage4.editorial_hook ?? null
+  const editorialRationale = entry.editorial_rationale ?? stage4.editorial_rationale ?? null
+  const editorialWriteup = entry.editorial_writeup ?? stage4.editorial_writeup ?? null
+  const editorialTier = entry.editorial_tier ?? stage4.editorial_tier ?? null
+
   // Edit state
+  const [editedHook, setEditedHook] = useState(editorialHook ?? '')
+  const [editedRationale, setEditedRationale] = useState(editorialRationale ?? '')
+  const [editedWriteup, setEditedWriteup] = useState(editorialWriteup ?? '')
   const [editedTip, setEditedTip] = useState(entry.insider_tip ?? editorial.insider_tip ?? '')
   const [editedOrder, setEditedOrder] = useState(entry.what_to_order ?? editorial.what_to_order ?? '')
   const [editedWhy, setEditedWhy] = useState(entry.why_it_made_the_cut ?? editorial.why_it_made_the_cut ?? '')
@@ -93,6 +104,9 @@ export default function EntryCard({ entry, queueType, editMode, onEditSave, onEd
 
   const handleSave = () => {
     onEditSave({
+      editorial_hook: editedHook,
+      editorial_rationale: editorialTier === 'minimal' ? null : (editedRationale || null),
+      editorial_writeup: editorialTier === 'minimal' ? null : (editedWriteup || null),
       insider_tip: editedTip,
       what_to_order: editedOrder,
       why_it_made_the_cut: editedWhy,
@@ -104,7 +118,7 @@ export default function EntryCard({ entry, queueType, editMode, onEditSave, onEd
   const availableTags = (TAGS_BY_CATEGORY[category] ?? []).filter(t => !editedTags.includes(t))
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-3xl">
 
       {/* Queue 1: Flag reasons first */}
       {queueType === 'q1' && (
@@ -243,6 +257,35 @@ export default function EntryCard({ entry, queueType, editMode, onEditSave, onEd
         {editMode ? (
           <div className="space-y-4">
             <EditField
+              label="Card copy"
+              sublabel="Appears on every browse card · 15–25 words"
+              value={editedHook}
+              onChange={setEditedHook}
+              placeholder="15–25 word argument for why someone would go here"
+            />
+            {editorialTier !== 'minimal' && (
+              <EditField
+                label="Extended rationale"
+                sublabel="Layer 2 preview · 2–3 sentences"
+                value={editedRationale}
+                onChange={setEditedRationale}
+                multiline
+                rows={3}
+                placeholder="2–3 sentences. What makes it distinctive, who it's for, best moment to visit."
+              />
+            )}
+            {editorialTier !== 'minimal' && (
+              <EditField
+                label="Editorial writeup"
+                value={editedWriteup}
+                onChange={setEditedWriteup}
+                multiline
+                rows={8}
+                placeholder="200–400 word editorial prose for the detail page."
+                showWordCount
+              />
+            )}
+            <EditField
               label="Insider tip"
               value={editedTip}
               onChange={setEditedTip}
@@ -315,19 +358,60 @@ export default function EntryCard({ entry, queueType, editMode, onEditSave, onEd
           </div>
         ) : (
           <div className="space-y-3">
+            {/* Tier chip */}
+            {editorialTier && (
+              <div>
+                <TierChip tier={editorialTier} />
+              </div>
+            )}
+
+            {/* Card copy */}
+            <EditorialField
+              label="Card copy"
+              sublabel="Appears on every browse card · 15–25 words"
+              value={editorialHook}
+              warn={!editorialHook}
+              warnMsg="Card copy — Missing. Required for public display."
+            />
+            {showHookWarning && (
+              <div className="pl-3 border-l" style={{ borderColor: C.redBorder }}>
+                <p className="text-sm font-['system-ui']" style={{ color: C.scoreRed }}>
+                  Card copy is required before approving. Add it in edit mode, or flag this entry.
+                </p>
+              </div>
+            )}
+
+            {/* Extended rationale */}
+            <EditorialField
+              label="Extended rationale"
+              sublabel="Layer 2 preview · 2–3 sentences"
+              value={editorialRationale}
+              tierSkipped={!editorialRationale && editorialTier === 'minimal'}
+              warn={!editorialRationale && editorialTier === 'full'}
+            />
+
+            {/* Editorial writeup */}
+            <EditorialField
+              label="Editorial writeup"
+              sublabel="Layer 3 detail page · 200–400 words"
+              value={editorialWriteup}
+              tierSkipped={!editorialWriteup && editorialTier === 'minimal'}
+              warn={!editorialWriteup && editorialTier === 'full'}
+              showWordCount
+            />
+
+            {/* Insider tip */}
             <EditorialField
               label="Insider tip"
+              sublabel="Layer 3 callout · curator-verified"
               value={entry.insider_tip ?? editorial.insider_tip}
               warn={!entry.insider_tip && !editorial.insider_tip}
             />
+
+            {/* What to order */}
             <EditorialField
               label="What to order"
               value={entry.what_to_order ?? editorial.what_to_order}
-            />
-            <EditorialField
-              label="Why it made the cut"
-              value={entry.why_it_made_the_cut ?? editorial.why_it_made_the_cut}
-              warn={!entry.why_it_made_the_cut && !editorial.why_it_made_the_cut}
             />
             {(rpd.editorial?.what_to_order_source_excerpts ?? []).length > 0 && (
               <div className="mt-2 space-y-1">
@@ -348,6 +432,15 @@ export default function EntryCard({ entry, queueType, editMode, onEditSave, onEd
                 ))}
               </div>
             )}
+
+            {/* Why it made the cut */}
+            <EditorialField
+              label="Why it made the cut"
+              sublabel="Not shown publicly"
+              value={entry.why_it_made_the_cut ?? editorial.why_it_made_the_cut}
+              warn={!entry.why_it_made_the_cut && !editorial.why_it_made_the_cut}
+              internal
+            />
           </div>
         )}
       </Section>
@@ -395,6 +488,22 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   )
 }
 
+function TierChip({ tier }: { tier: string }) {
+  const isMinimal = tier === 'minimal'
+  return (
+    <span
+      className="text-xs uppercase tracking-widest px-2 py-0.5 font-['system-ui']"
+      style={{
+        color: isMinimal ? C.textFaint : C.textMuted,
+        border: `1px solid ${C.border}`,
+        background: isMinimal ? C.bgMuted : C.bgActive,
+      }}
+    >
+      {isMinimal ? 'Minimal' : 'Full editorial'}
+    </span>
+  )
+}
+
 function FlagBadge({
   color,
   label,
@@ -428,23 +537,62 @@ function FlagBadge({
 function EditorialField({
   label,
   value,
-  warn
+  warn,
+  warnMsg,
+  sublabel,
+  tierSkipped,
+  showWordCount,
+  internal,
 }: {
   label: string
   value: string | null | undefined
   warn?: boolean
+  warnMsg?: string
+  sublabel?: string
+  tierSkipped?: boolean
+  showWordCount?: boolean
+  internal?: boolean
 }) {
+  const wordCount = value ? value.trim().split(/\s+/).filter(Boolean).length : 0
+
   return (
-    <div>
-      <p className="text-xs uppercase tracking-widest font-['system-ui'] mb-1" style={{ color: C.textMuted }}>{label}</p>
-      {value ? (
-        <p className="text-base font-['Georgia',serif] leading-relaxed" style={{ color: C.text }}>{value}</p>
+    <div
+      className={warn ? 'pl-3 border-l' : ''}
+      style={warn ? { borderColor: C.redBorder } : {}}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <p className="text-xs uppercase tracking-widest font-['system-ui']" style={{ color: C.textMuted }}>{label}</p>
+        {internal && (
+          <span
+            className="text-xs uppercase tracking-widest px-1.5 py-0 font-['system-ui']"
+            style={{ color: C.textFaint, border: `1px solid ${C.border}`, background: C.bgMuted }}
+          >
+            Internal
+          </span>
+        )}
+      </div>
+      {sublabel && (
+        <p className="text-[11px] font-['system-ui'] mb-1" style={{ color: C.textFaint }}>{sublabel}</p>
+      )}
+      {tierSkipped ? (
+        <p className="text-sm font-['system-ui'] italic" style={{ color: C.textFaint, opacity: 0.6 }}>
+          Not generated for minimal tier — added after first recheck.
+        </p>
+      ) : value ? (
+        <>
+          <p className="text-base font-['Georgia',serif] leading-relaxed" style={{ color: C.text }}>{value}</p>
+          {showWordCount && (
+            <p className="text-xs font-['system-ui'] mt-0.5" style={{ color: C.textFaint }}>
+              {wordCount} {wordCount === 1 ? 'word' : 'words'}
+            </p>
+          )}
+        </>
       ) : (
         <p
           className="text-sm font-['system-ui'] italic"
           style={{ color: warn ? C.scoreRed : C.textFaint }}
         >
-          {warn ? 'Missing — edit before approving' : 'Not set'}
+          {warn ? (warnMsg ?? 'Missing — edit before approving') : 'Not set'}
         </p>
       )}
     </div>
@@ -453,23 +601,37 @@ function EditorialField({
 
 function EditField({
   label,
+  sublabel,
   value,
   onChange,
-  multiline
+  multiline,
+  rows,
+  placeholder,
+  showWordCount,
 }: {
   label: string
+  sublabel?: string
   value: string
   onChange: (v: string) => void
   multiline?: boolean
+  rows?: number
+  placeholder?: string
+  showWordCount?: boolean
 }) {
+  const wordCount = value.trim().split(/\s+/).filter(Boolean).length
+
   return (
     <div>
       <p className="text-xs uppercase tracking-widest font-['system-ui'] mb-1.5" style={{ color: C.textMuted }}>{label}</p>
+      {sublabel && (
+        <p className="text-[11px] font-['system-ui'] mb-1.5" style={{ color: C.textFaint }}>{sublabel}</p>
+      )}
       {multiline ? (
         <textarea
           value={value}
           onChange={e => onChange(e.target.value)}
-          rows={3}
+          rows={rows ?? 3}
+          placeholder={placeholder}
           className="w-full border text-base px-3 py-2 font-['Georgia',serif] leading-relaxed resize-none focus:outline-none"
           style={{ background: C.bgSubtle, borderColor: C.border, color: C.text }}
         />
@@ -478,9 +640,15 @@ function EditField({
           type="text"
           value={value}
           onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
           className="w-full border text-base px-3 py-2 font-['system-ui'] focus:outline-none"
           style={{ background: C.bgSubtle, borderColor: C.border, color: C.text }}
         />
+      )}
+      {showWordCount && (
+        <p className="text-xs font-['system-ui'] mt-0.5" style={{ color: C.textFaint }}>
+          {wordCount} {wordCount === 1 ? 'word' : 'words'}
+        </p>
       )}
     </div>
   )

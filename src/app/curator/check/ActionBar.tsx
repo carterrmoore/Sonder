@@ -45,6 +45,8 @@ type Props = {
   entry: Record<string, any>
   showRejectMenu: boolean
   onRejectMenuChange: (show: boolean) => void
+  editorialHook: string | null
+  onApproveBlocked: () => void
 }
 
 const REJECTION_REASONS = [
@@ -70,6 +72,8 @@ export default function ActionBar({
   entry,
   showRejectMenu,
   onRejectMenuChange,
+  editorialHook,
+  onApproveBlocked,
 }: Props) {
   const [showShortcuts, setShowShortcuts] = useState(false)
 
@@ -166,7 +170,13 @@ export default function ActionBar({
             label="Approve"
             shortcut="A"
             color="green"
-            onClick={() => onAction('approve')}
+            onClick={() => {
+              if (!editorialHook) {
+                onApproveBlocked()
+              } else {
+                onAction('approve')
+              }
+            }}
             disabled={isSubmitting}
           />
           <ActionButton

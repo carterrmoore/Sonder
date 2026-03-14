@@ -41,6 +41,7 @@ import { runStage3 } from "./stage3";
 import { runStage4 } from "./stage4";
 import { resetGate1Accumulator, flushGate1Batch } from "./gate1";
 import { resetGate2Accumulator, flushGate2Batch } from "./gate2";
+import { generateArticlesForCity } from "./generate-articles";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Supabase service role client (pipeline writes bypass RLS)
@@ -1205,6 +1206,13 @@ await flushGate2Batch();
         console.log(`[pipeline] Run summary persisted — id: ${runId}`);
       }
     });
+
+  // Non-blocking article generation -- failure never affects
+  // pipeline completion status
+  generateArticlesForCity(cityId).catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[article-gen] auto-trigger failed:', message);
+  });
 
   return summary;
 }

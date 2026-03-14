@@ -61,7 +61,22 @@ export async function POST(request: Request) {
 }
 
 if (newStatus) updatePayload.review_status = newStatus
-if (edited_fields) Object.assign(updatePayload, edited_fields)
+if (edited_fields) {
+  const writableFields = [
+    'insider_tip',
+    'what_to_order',
+    'why_it_made_the_cut',
+    'suggested_tags',
+    'editorial_hook',
+    'editorial_rationale',
+    'editorial_writeup',
+  ]
+  for (const field of writableFields) {
+    if (edited_fields[field] !== undefined) {
+      updatePayload[field] = edited_fields[field]
+    }
+  }
+}
 
   const { error: entryError } = await supabase
     .from('entries')
