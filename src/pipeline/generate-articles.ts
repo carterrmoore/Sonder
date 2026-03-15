@@ -201,10 +201,9 @@ function validateArticleResult(
   }
 
   if (!Array.isArray(r.social_bites)) return false;
-  if (r.social_bites.length < 1)
+  if (r.social_bites.length < 3)
     throw new Error(`insufficient_social_bites: got ${r.social_bites.length}`);
 
-  console.log('[article-gen] Validation passed');
   return true;
 }
 
@@ -351,15 +350,6 @@ For Reddit bites:
     messages: [{ role: 'user', content: userPrompt }],
   });
 
-  console.log('[article-gen] API response:', JSON.stringify({
-    stop_reason: response.stop_reason,
-    content_blocks: response.content.length,
-    first_block_type: response.content[0]?.type,
-    first_block_length: response.content[0]?.type === 'text'
-      ? (response.content[0] as any).text?.length
-      : 0,
-  }));
-
   const rawText = response.content
     .filter(b => b.type === 'text')
     .map(b => (b as { type: 'text'; text: string }).text)
@@ -371,8 +361,6 @@ For Reddit bites:
     .replace(/\s*```$/i, '')
     .trim();
 
-  console.log('[article-gen] Raw Claude response:', cleaned.slice(0, 500));
-
   let parsed: unknown;
   try {
     parsed = JSON.parse(cleaned);
@@ -381,11 +369,6 @@ For Reddit bites:
   }
 
   const entryIds = selectedEntries.map(e => e.id);
-  console.log('[article-gen] social_bites count:',
-    Array.isArray((parsed as any)?.social_bites)
-      ? (parsed as any).social_bites.length
-      : 'not an array'
-  );
   try {
     validateArticleResult(parsed, entryIds);
   } catch (validationErr) {
