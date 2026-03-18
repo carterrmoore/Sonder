@@ -396,6 +396,14 @@ CAFE ENTRIES:
 
 FIELD RULES:
 
+editorial_hook: 15-25 words. An argument, not a description. Must make a specific case for why someone would go to this place. Do not describe the category. Capture the experience. Write as Jan Morris or The Infatuation: specific, opinionated, human.
+CORRECT: "A converted pharmacy where the owner pours natural wine and forgets to charge you for the cheese."
+WRONG: "A popular wine bar in the old town with a cozy atmosphere."
+
+editorial_rationale: 2-3 sentences. Builds on the hook. What makes this place distinctive, who it is for, and the best moment to visit. Written for a traveller scanning options, not a critic writing a review. Self-contained: a reader who never sees the hook should still understand the place. No em dashes.
+
+editorial_writeup: 200-400 words. Full editorial prose for the detail page. Written like a paragraph from a Cereal City Guide: observational, specific, opinionated. Cover: atmosphere, what to expect on arrival, neighbourhood context, at least one specific detail only a local would know. Close with one practical note. Do not structure as a review with headers. Write as continuous prose. Do not open with the venue name. No em dashes. No banned words: vibrant, charming, bustling, stunning, picturesque, magical, hidden gem, off the beaten path, must-visit, highly recommended.
+
 insider_tip: 1-2 sentences. Must contain at least one specific, verifiable detail from the review data.
 
 what_to_order: Only populate if 3+ independent reviews name the same specific item. Return null if no clear standout.
@@ -429,6 +437,9 @@ RESPONSE FORMAT:
 [
   {
     "candidate_id": "string",
+    "editorial_hook": "string",
+    "editorial_rationale": "string",
+    "editorial_writeup": "string",
     "insider_tip": "string",
     "what_to_order": "string | null",
     "what_to_order_source_excerpts": ["string"],

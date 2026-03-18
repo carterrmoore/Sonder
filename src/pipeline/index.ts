@@ -343,6 +343,10 @@ const RawPipelineDataSchema = z.object({
     checked_at: z.string(),
   }).nullable(),
   editorial: z.object({
+    editorial_hook: z.string().nullable(),
+    editorial_rationale: z.string().nullable(),
+    editorial_writeup: z.string().nullable(),
+    editorial_tier: z.enum(['full', 'minimal']).nullable(),
     insider_tip: z.string(),
     what_to_order: z.string().nullable(),
     what_to_order_source_excerpts: z.array(z.string()),
@@ -480,6 +484,13 @@ async function promoteCandidate(
       booking_tier: validatedData.booking_tier,
       suggested_tags: validatedData.suggested_tags,
       editorial_tier: editorialTier,
+      // Editorial content fields — promoted from pipeline stage4
+      editorial_hook: pipelineData.editorial?.editorial_hook ?? null,
+      editorial_rationale: pipelineData.editorial?.editorial_rationale ?? null,
+      editorial_writeup: pipelineData.editorial?.editorial_writeup ?? null,
+      insider_tip: pipelineData.editorial?.insider_tip ?? null,
+      what_to_order: pipelineData.editorial?.what_to_order ?? null,
+      why_it_made_the_cut: pipelineData.editorial?.why_it_made_the_cut ?? null,
       // Restaurant-specific fields (null for other categories)
       meal_eligibility: null,       // assigned by curator from stage4 data
       restaurant_sub_type: null,    // assigned by curator from stage4 data

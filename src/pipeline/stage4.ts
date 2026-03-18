@@ -342,6 +342,9 @@ function parseStage4Response<T>(rawText: string, batchId: string): T[] {
 
 interface FullEditorialClaudeResult {
   candidate_id: string;
+  editorial_hook: string;
+  editorial_rationale: string;
+  editorial_writeup: string;
   insider_tip: string;
   what_to_order: string | null;
   what_to_order_source_excerpts: string[];
@@ -673,6 +676,10 @@ export async function runStage4(
     const result = fullResults.get(candidateId);
     if (result) {
       editorial = {
+        editorial_hook: result.editorial_hook ?? null,
+        editorial_rationale: result.editorial_rationale ?? null,
+        editorial_writeup: result.editorial_writeup ?? null,
+        editorial_tier: 'full',
         insider_tip: result.insider_tip ?? "",
         what_to_order: result.what_to_order ?? null,
         what_to_order_source_excerpts: Array.isArray(result.what_to_order_source_excerpts)
@@ -723,6 +730,10 @@ export async function runStage4(
     const result = minimalResults.get(candidateId);
     if (result) {
       editorial = {
+        editorial_hook: null,
+        editorial_rationale: null,
+        editorial_writeup: null,
+        editorial_tier: 'minimal',
         insider_tip: "",  // Not generated for minimal tier
         what_to_order: null,
         what_to_order_source_excerpts: [],

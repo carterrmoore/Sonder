@@ -270,6 +270,17 @@ export interface Stage3Result {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface EditorialContent {
+  // User-facing fields (shown in public product)
+  /** 15-25 word argument for why someone would visit. Shown on every card. */
+  editorial_hook: string | null;
+  /** 2-3 sentence expansion of the hook. Self-contained. */
+  editorial_rationale: string | null;
+  /** 200-400 word prose for the detail page. */
+  editorial_writeup: string | null;
+  /** Whether this entry received full or minimal editorial generation. */
+  editorial_tier: 'full' | 'minimal' | null;
+
+  // Curator-facing fields
   /**
    * One or two sentence insider tip. Practical, specific, not generic.
    * Flagged for human approval.
