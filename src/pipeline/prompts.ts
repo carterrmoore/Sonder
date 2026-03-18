@@ -399,6 +399,7 @@ FIELD RULES:
 editorial_hook: 15-25 words. An argument, not a description. Must make a specific case for why someone would go to this place. Do not describe the category. Capture the experience. Write as Jan Morris or The Infatuation: specific, opinionated, human.
 CORRECT: "A converted pharmacy where the owner pours natural wine and forgets to charge you for the cheese."
 WRONG: "A popular wine bar in the old town with a cozy atmosphere."
+editorial_hook is REQUIRED. Never return null or an empty string for editorial_hook. If you cannot generate a specific hook from the available data, write the most specific observation you can make about what distinguishes this place. A weak hook is better than no hook.
 
 editorial_rationale: 2-3 sentences. Builds on the hook. What makes this place distinctive, who it is for, and the best moment to visit. Written for a traveller scanning options, not a critic writing a review. Self-contained: a reader who never sees the hook should still understand the place. No em dashes.
 
@@ -475,23 +476,31 @@ ${JSON.stringify(candidates, null, 2)}`;
 // ---------------------------------------------------------------------------
 
 export function stage4MinimalSystemPrompt(cityName: string, country: string): string {
-  return `You are writing a one-sentence curation justification for a travel platform focused on ${cityName}, ${country}.
+  return `You are writing three short editorial fields for a curated travel platform focused on ${cityName}, ${country}.
 
-A human curator uses this sentence to decide whether to approve or reject a candidate that narrowly passed the quality gate. Articulate the specific quality signal that got this candidate through. Not a sales pitch.
+A human curator uses these fields to decide whether to approve or reject a candidate that narrowly passed the quality gate. Be specific, honest, and grounded in the review data. Not a sales pitch.
 
 - Never use em dashes, en dashes, or double hyphens (--). Use commas or colons instead.
 
-CORRECT: "Passed on the strength of consistent local-language praise across 40+ Polish reviews and a 2024 Michelin Bib Gourmand nomination."
-CORRECT: "A neighbourhood bar with zero tourist platform presence but recurring mentions in Polish nightlife communities. Local credibility was the deciding factor."
-WRONG: "A good restaurant with quality food and friendly service."
+FIELD RULES:
 
-The sentence must name the specific signal(s) that tipped the score above 65. Use gate2_components to identify what scored highest.
-why_it_made_the_cut is user-facing. Never reference scores, gates, or internal criteria. Write as editorial voice, not a scoring summary.
+editorial_hook: 15-25 words. An argument for why someone would go to this specific place. Not a description — an argument. Do not describe the category. Capture the experience. Write as something specific and opinionated: name the thing that makes this place worth visiting over everywhere else.
+CORRECT: "A neighbourhood bar with zero tourist presence where the wine list changes weekly and the regulars know each other."
+WRONG: "A charming wine bar with a cozy atmosphere and great selection."
+No em dashes. No banned words: vibrant, charming, bustling, stunning, picturesque, magical, hidden gem, off the beaten path, must-visit, highly recommended.
+
+insider_tip: 1-2 sentences. Practical and specific. Must contain at least one verifiable detail from the review data: a dish, a time to visit, what to order, how to navigate the space.
+
+why_it_made_the_cut: One sentence. Articulate the specific quality signal that tipped the score above 65. Use gate2_components to identify what scored highest. User-facing — never reference scores, gates, or internal criteria. Write as editorial voice, not a scoring summary.
+CORRECT: "Passed on the strength of consistent local-language praise across 40+ Polish reviews and a 2024 Michelin Bib Gourmand nomination."
+WRONG: "A good restaurant with quality food and friendly service."
 
 RESPONSE FORMAT:
 [
   {
     "candidate_id": "string",
+    "editorial_hook": "string",
+    "insider_tip": "string",
     "why_it_made_the_cut": "string"
   }
 ]

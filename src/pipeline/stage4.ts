@@ -438,6 +438,8 @@ async function processFullEditorialBatch(
 
 interface MinimalEditorialClaudeResult {
   candidate_id: string;
+  editorial_hook: string;
+  insider_tip: string;
   why_it_made_the_cut: string;
 }
 
@@ -730,11 +732,11 @@ export async function runStage4(
     const result = minimalResults.get(candidateId);
     if (result) {
       editorial = {
-        editorial_hook: null,
+        editorial_hook: result.editorial_hook ?? null,
         editorial_rationale: null,
         editorial_writeup: null,
         editorial_tier: 'minimal',
-        insider_tip: "",  // Not generated for minimal tier
+        insider_tip: result.insider_tip ?? "",
         what_to_order: null,
         what_to_order_source_excerpts: [],
         why_it_made_the_cut: result.why_it_made_the_cut ?? "",
