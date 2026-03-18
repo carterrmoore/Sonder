@@ -207,7 +207,7 @@ export default function CheckInterface({ q1, q2, q3, curatorName }: Props) {
         if (tag === 'TEXTAREA' || tag === 'INPUT') return
         if (editMode) return
         switch (e.key.toLowerCase()) {
-          case 'a': e.preventDefault(); if (!currentEditorialHook) { setShowHookWarning(true) } else { submitAction('approve') } break
+          case 'a': e.preventDefault(); if (activeQueue === 'q2' && !currentEditorialHook) { setShowHookWarning(true) } else { submitAction('approve') } break
           case 'r': e.preventDefault(); setShowRejectMenu(true); break
           case 'f': e.preventDefault(); submitAction('flag'); break
           case 'n': e.preventDefault(); advanceQueue(); break
@@ -375,6 +375,7 @@ export default function CheckInterface({ q1, q2, q3, curatorName }: Props) {
               onRejectMenuChange={setShowRejectMenu}
               editorialHook={currentEditorialHook}
               onApproveBlocked={() => setShowHookWarning(true)}
+              queue={activeQueue}
             />
           </div>
 

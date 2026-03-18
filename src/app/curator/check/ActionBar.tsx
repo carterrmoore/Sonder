@@ -47,6 +47,7 @@ type Props = {
   onRejectMenuChange: (show: boolean) => void
   editorialHook: string | null
   onApproveBlocked: () => void
+  queue: 'q1' | 'q2' | 'q3'
 }
 
 const REJECTION_REASONS = [
@@ -74,6 +75,7 @@ export default function ActionBar({
   onRejectMenuChange,
   editorialHook,
   onApproveBlocked,
+  queue,
 }: Props) {
   const [showShortcuts, setShowShortcuts] = useState(false)
 
@@ -171,7 +173,7 @@ export default function ActionBar({
             shortcut="A"
             color="green"
             onClick={() => {
-              if (!editorialHook) {
+              if (queue === 'q2' && !editorialHook) {
                 onApproveBlocked()
               } else {
                 onAction('approve')
