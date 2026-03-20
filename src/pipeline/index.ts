@@ -109,6 +109,8 @@ export interface PipelineRunSummary {
   // Failures
   candidates_failed: number;
   candidates_pending_retry: number;
+  // Accommodation enrichment
+  booking_com_properties_fetched: number;
   // Cost estimates
   estimated_api_cost_usd: number;
   estimated_claude_cost_usd: number;
@@ -228,6 +230,7 @@ function initialStats(): RunStats {
     seasonal_scores_claude_computed: 0,
     candidates_failed: 0,
     candidates_pending_retry: 0,
+    booking_com_properties_fetched: 0,
     estimated_api_cost_usd: 0,
     estimated_claude_cost_usd: 0,
     estimated_savings_usd: 0,
@@ -249,6 +252,8 @@ export interface CandidateResult {
   editorialTier: "full" | "minimal" | null;
   /** True if seasonal scores were rule-computed (not Claude). */
   seasonalScoresRuleComputed: boolean;
+  /** True if Booking.com enrichment returned data during post-Gate-1 enrichment. */
+  bookingComEnriched: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -466,35 +471,45 @@ async function promoteCandidate(
   // Write to entries table
   const { data: entry, error: insertError } = await supabase
     .from("entries")
-    .insert({
-      city_id: cityId,
-      category: validatedData.category,
-      name: candidate.name,
-      address: candidate.address,
-      lat: candidate.lat,
-      lng: candidate.lng,
-      google_place_id: candidate.google_place_id,
-      review_status: "pending_review",
-      review_queue: queue,
-      operational_status: validatedData.gate0.status,
-      raw_pipeline_data: validatedData,
-      pipeline_version: PIPELINE_VERSION,
-      recheck_tier: recheckTier,
-      quality_score: validatedData.gate2?.total_score ?? null,
-      booking_tier: validatedData.booking_tier,
-      suggested_tags: validatedData.suggested_tags,
-      editorial_tier: editorialTier,
-      // Editorial content fields — promoted from pipeline stage4
-      editorial_hook: pipelineData.editorial?.editorial_hook ?? null,
-      editorial_rationale: pipelineData.editorial?.editorial_rationale ?? null,
-      editorial_writeup: pipelineData.editorial?.editorial_writeup ?? null,
-      insider_tip: pipelineData.editorial?.insider_tip ?? null,
-      what_to_order: pipelineData.editorial?.what_to_order ?? null,
-      why_it_made_the_cut: pipelineData.editorial?.why_it_made_the_cut ?? null,
-      // Restaurant-specific fields (null for other categories)
-      meal_eligibility: null,       // assigned by curator from stage4 data
-      restaurant_sub_type: null,    // assigned by curator from stage4 data
-    })
+    .insert(
+      {
+        city_id: cityId,
+        category: validatedData.category,
+        name: candidate.name,
+        address: candidate.address,
+        lat: candidate.lat,
+        lng: candidate.lng,
+        google_place_id: candidate.google_place_id,
+        review_status: "pending_review",
+        review_queue: queue,
+        operational_status: validatedData.gate0.status,
+        raw_pipeline_data: validatedData,
+        pipeline_version: PIPELINE_VERSION,
+        recheck_tier: recheckTier,
+        quality_score: validatedData.gate2?.total_score ?? null,
+        booking_tier: validatedData.booking_tier,
+        suggested_tags: validatedData.suggested_tags,
+        editorial_tier: editorialTier,
+        // Editorial content fields — promoted from pipeline stage4
+        editorial_hook: pipelineData.editorial?.editorial_hook ?? null,
+        editorial_rationale: pipelineData.editorial?.editorial_rationale ?? null,
+        editorial_writeup: pipelineData.editorial?.editorial_writeup ?? null,
+        insider_tip: pipelineData.editorial?.insider_tip ?? null,
+        what_to_order: pipelineData.editorial?.what_to_order ?? null,
+        why_it_made_the_cut: pipelineData.editorial?.why_it_made_the_cut ?? null,
+        // Restaurant-specific fields (null for other categories)
+        meal_eligibility: null,       // assigned by curator from stage4 data
+        restaurant_sub_type: null,    // assigned by curator from stage4 data
+        // Booking.com summary columns — accommodation only, null for all other categories
+        ...(pipelineData.booking_com_data && {
+          booking_com_hotel_id: pipelineData.booking_com_data.hotel_id,
+          booking_com_url: pipelineData.booking_com_data.booking_url,
+          booking_com_rating: pipelineData.booking_com_data.rating,
+          booking_com_review_count: pipelineData.booking_com_data.review_count,
+          booking_com_category_scores: pipelineData.booking_com_data.category_scores,
+        }),
+      }
+    )
     .select("id")
     .single();
 
@@ -529,6 +544,9 @@ export async function processCandidate(
   const log = (msg: string) => console.log(`[processCandidate:${candidateId}] ${msg}`);
   const logError = (msg: string, err?: unknown) =>
     console.error(`[processCandidate:${candidateId}] ${msg}`, err ?? "");
+
+  // Set to true immediately when Booking.com enrichment returns data
+  let bookingComEnriched = false;
 
   // Mark as processing
   await supabase
@@ -572,6 +590,7 @@ export async function processCandidate(
         promotedEntryId: null,
         editorialTier: null,
         seasonalScoresRuleComputed: false,
+        bookingComEnriched,
       };
     }
   } catch (err) {
@@ -616,6 +635,7 @@ export async function processCandidate(
         promotedEntryId: null,
         editorialTier: null,
         seasonalScoresRuleComputed: false,
+        bookingComEnriched,
       };
     }
 
@@ -625,43 +645,77 @@ export async function processCandidate(
     return handleCandidateFailure(candidateId, "gate1", err, supabase);
   }
 
-  // ── Post-Gate 1: Apify review enrichment ─────────────────────────────────
-  // Only fetch expensive Apify reviews for candidates that survived Gate 1.
-  // Non-blocking: Gate 2 always runs regardless of Apify success/failure.
+  // ── Post-Gate 1: Apify review enrichment + Booking.com enrichment ───────
+  // Only fetch expensive enrichment for candidates that survived Gate 1.
+  // Non-blocking: Gate 2 always runs regardless of enrichment success/failure.
   try {
     const { data: candidateRow } = await supabase
       .from("pipeline_candidates")
-      .select("google_place_id, stage1_result")
+      .select("google_place_id, name, stage1_result")
       .eq("id", candidateId)
       .single();
 
     const googlePlaceId = candidateRow?.google_place_id;
 
     if (googlePlaceId) {
-      const { fetchApifyReviews } = await import("@/pipeline/stage1");
-      const apifyReviews = await fetchApifyReviews(googlePlaceId);
+      const { fetchApifyReviews, resolveAndFetchBookingComData } =
+        await import("@/pipeline/stage1");
 
-      if (apifyReviews.length > 0) {
-        const updatedStage1 = {
-          ...(candidateRow.stage1_result as Record<string, unknown>),
-          recent_reviews: apifyReviews,
-          review_source: "apify",
-          review_count_fetched: apifyReviews.length,
-        };
+      let updatedStage1 = { ...(candidateRow.stage1_result as Record<string, unknown>) };
 
-        await supabase
-          .from("pipeline_candidates")
-          .update({ stage1_result: updatedStage1 })
-          .eq("id", candidateId);
+      if (category === "accommodation") {
+        // Run review scrape and Booking.com fetch in parallel
+        const [reviewResult, bookingResult] = await Promise.allSettled([
+          fetchApifyReviews(googlePlaceId),
+          resolveAndFetchBookingComData(
+            candidateRow.name as string,
+            cityContext.slug
+          ),
+        ]);
 
-        log(`Apify enrichment: ${apifyReviews.length} reviews`);
+        if (reviewResult.status === "fulfilled" && reviewResult.value.length > 0) {
+          updatedStage1 = {
+            ...updatedStage1,
+            recent_reviews: reviewResult.value,
+            review_source: "apify",
+            review_count_fetched: reviewResult.value.length,
+          };
+          log(`Apify enrichment: ${reviewResult.value.length} reviews`);
+        } else {
+          log("Apify enrichment: no reviews returned, keeping Google reviews");
+        }
+
+        if (bookingResult.status === "fulfilled" && bookingResult.value !== null) {
+          updatedStage1 = { ...updatedStage1, booking_com_data: bookingResult.value };
+          bookingComEnriched = true;
+          log(`Booking.com enrichment: hotel_id=${bookingResult.value.hotel_id}`);
+        } else {
+          log("Booking.com enrichment: no data returned, continuing without it");
+        }
       } else {
-        log("Apify enrichment: no reviews returned, keeping Google reviews");
+        // Non-accommodation — review scrape only, unchanged
+        const apifyReviews = await fetchApifyReviews(googlePlaceId);
+        if (apifyReviews.length > 0) {
+          updatedStage1 = {
+            ...updatedStage1,
+            recent_reviews: apifyReviews,
+            review_source: "apify",
+            review_count_fetched: apifyReviews.length,
+          };
+          log(`Apify enrichment: ${apifyReviews.length} reviews`);
+        } else {
+          log("Apify enrichment: no reviews returned, keeping Google reviews");
+        }
       }
+
+      await supabase
+        .from("pipeline_candidates")
+        .update({ stage1_result: updatedStage1 })
+        .eq("id", candidateId);
     }
   } catch (err) {
     console.warn(
-      `[pipeline] Apify enrichment failed for ${candidateId} — proceeding to Gate 2 with existing reviews`,
+      `[pipeline] Post-Gate-1 enrichment failed for ${candidateId} — proceeding to Gate 2 with existing data`,
       err
     );
   }
@@ -697,6 +751,7 @@ export async function processCandidate(
         promotedEntryId: null,
         editorialTier: null,
         seasonalScoresRuleComputed: false,
+        bookingComEnriched,
       };
     }
 
@@ -720,6 +775,7 @@ export async function processCandidate(
         promotedEntryId: null,
         editorialTier: null,
         seasonalScoresRuleComputed: false,
+        bookingComEnriched,
       };
     }
 
@@ -763,6 +819,7 @@ export async function processCandidate(
         promotedEntryId: null,
         editorialTier: null,
         seasonalScoresRuleComputed: false,
+        bookingComEnriched,
       };
     }
   } catch (err) {
@@ -804,7 +861,7 @@ export async function processCandidate(
   // Read candidate record to get Stage 1 source data
   const { data: candidateRow } = await supabase
     .from("pipeline_candidates")
-    .select("sources, gate0_result, gate1_result, gate2_result, stage3_result, stage4_result, is_curator_nomination, nomination_note, retry_count")
+    .select("sources, stage1_result, gate0_result, gate1_result, gate2_result, stage3_result, stage4_result, is_curator_nomination, nomination_note, retry_count")
     .eq("id", candidateId)
     .single();
 
@@ -818,6 +875,7 @@ export async function processCandidate(
     );
   }
 
+  const stage1Data = candidateRow.stage1_result as Record<string, unknown> | null;
   const pipelineData: RawPipelineData = {
     pipeline_version: PIPELINE_VERSION,
     generated_at: new Date().toISOString(),
@@ -826,6 +884,7 @@ export async function processCandidate(
     aggregate_ratings: stage4Result.aggregate_ratings,
     recent_reviews: stage4Result.recent_reviews,
     editorial_mentions: stage4Result.editorial_mentions,
+    booking_com_data: (stage1Data?.booking_com_data ?? null) as RawPipelineData["booking_com_data"],
     gate0: gate0Result,
     gate1: gate1Result,
     gate2: gate2Result,
@@ -882,6 +941,7 @@ export async function processCandidate(
     promotedEntryId,
     editorialTier,
     seasonalScoresRuleComputed,
+    bookingComEnriched,
   };
 }
 
@@ -945,6 +1005,7 @@ async function handleCandidateFailure(
     promotedEntryId: null,
     editorialTier: null,
     seasonalScoresRuleComputed: false,
+    bookingComEnriched: false,
   };
 }
 
@@ -976,7 +1037,7 @@ export async function runPipeline(
   // ── Load city context ─────────────────────────────────────────────────────
 const { data: city, error: cityError } = await supabase
   .from("cities")
-  .select("id, display_name, country, city_context")  
+  .select("id, slug, display_name, country, city_context")
   .eq("id", cityId)
   .single();
 
@@ -987,11 +1048,12 @@ const { data: city, error: cityError } = await supabase
   // city_context is a jsonb column containing top_tourist_landmarks and other
   // city-specific data needed by Stage 1 pre-triage and Gate 1
   const cityContext: CityContext = {
-  id: city.id,
-  name: city.display_name,    
-  country: city.country,
-  top_tourist_landmarks: city.city_context?.top_tourist_landmarks ?? [],
-};
+    id: city.id,
+    slug: city.slug,
+    name: city.display_name,
+    country: city.country,
+    top_tourist_landmarks: city.city_context?.top_tourist_landmarks ?? [],
+  };
 
   // Reset any candidates stuck in 'processing' from an interrupted run
   await supabase
@@ -1206,6 +1268,7 @@ await flushGate2Batch();
       seasonal_scores_claude_computed: summary.seasonal_scores_claude_computed,
       candidates_failed:               summary.candidates_failed,
       candidates_pending_retry:        summary.candidates_pending_retry,
+      booking_com_properties_fetched:  summary.booking_com_properties_fetched,
       estimated_api_cost_usd:          summary.estimated_api_cost_usd,
       estimated_claude_cost_usd:       summary.estimated_claude_cost_usd,
       estimated_savings_usd:           summary.estimated_savings_usd,
@@ -1337,6 +1400,9 @@ function accumulateStats(stats: RunStats, result: CandidateResult): void {
 
     // Stage 3
     if (d.stage3?.tripadvisor_disconnect_detected) stats.stage3_tripadvisor_disconnect++;
+
+    // Accommodation Booking.com enrichment
+    if (result.bookingComEnriched) stats.booking_com_properties_fetched++;
 
     // Editorial tier
     if (result.editorialTier === "full") stats.editorial_full++;

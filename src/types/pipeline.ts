@@ -125,6 +125,79 @@ export interface EditorialMention {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Booking.com enrichment — accommodation category only
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A single facility from Booking.com property data.
+ * requiresAdditionalCharge: true means it costs extra.
+ * isOffSite: true means the facility is not at the property itself.
+ */
+export interface BookingComFacility {
+  name: string;
+  requiresAdditionalCharge: boolean;
+  isOffSite: boolean;
+  id?: number;
+}
+
+/**
+ * A facility group from Booking.com (e.g. "Wellness", "Food & Drink").
+ */
+export interface BookingComFacilityGroup {
+  name: string;
+  overview: string | null;
+  facilities: BookingComFacility[];
+}
+
+/**
+ * A category review score from Booking.com.
+ * e.g. { title: "Staff", score: 9.6 }
+ */
+export interface BookingComCategoryScore {
+  title: string;
+  score: number;
+}
+
+/**
+ * Full Booking.com property data scraped via voyager/booking-scraper
+ * with surroundings add-on enabled. Populated post-Gate-1 for
+ * accommodation candidates only. Stored in raw_pipeline_data.booking_com_data.
+ * Never shown publicly — pipeline and curator internal only.
+ */
+export interface BookingComData {
+  /** Booking.com numeric hotel ID. Store permanently — used for Demand API migration. */
+  hotel_id: number;
+  /** Clean Booking.com property URL (strip query params before storing). */
+  booking_url: string;
+  /** Overall rating on Booking.com 1–10 scale. */
+  rating: number;
+  /** Localised label e.g. "Superb", "Exceptional". */
+  rating_label: string;
+  /** Total number of reviews on Booking.com. */
+  review_count: number;
+  /** Category breakdown scores e.g. Staff, Cleanliness, Value for money. */
+  category_scores: BookingComCategoryScore[];
+  /** Star rating 1–5. */
+  stars: number | null;
+  /** Breakfast type if included e.g. "Continental, Buffet". Null if not included. */
+  breakfast: string | null;
+  /** Structured facility groups with per-facility charge/offsite flags. */
+  facility_groups: BookingComFacilityGroup[];
+  /** Room-level facility lists — array of unique facility names across all room types. */
+  room_facilities: string[];
+  /** Check-in time string as returned by Booking.com e.g. "From 14:00". */
+  check_in: string | null;
+  /** Check-out time string e.g. "Until 12:00". */
+  check_out: string | null;
+  /** Whether any room option has free cancellation available. */
+  has_free_cancellation: boolean;
+  /** ISO datetime when this data was scraped. */
+  scraped_at: string;
+  /** Actor run that produced this data — for debugging. */
+  apify_run_id: string | null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Gate 0 — Operational Verification
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -380,6 +453,13 @@ export interface RawPipelineData {
 
   /** All editorial mentions found across trust tiers 1–4 */
   editorial_mentions: EditorialMention[];
+
+  /**
+   * Booking.com property data scraped via voyager/booking-scraper.
+   * Only populated for accommodation category, post-Gate-1.
+   * Null if enrichment failed, property not found, or category is not accommodation.
+   */
+  booking_com_data?: BookingComData | null;
 
   // ── Stage 2a: Gate 0 ─────────────────────────────────────────────────────
 

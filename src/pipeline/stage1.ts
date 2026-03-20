@@ -24,7 +24,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Category, CandidateSource, RawReview } from "@/types/pipeline";
+import type { Category, CandidateSource, RawReview, BookingComData } from "@/types/pipeline";
 import {
   passesPretriage,
   earlyTouristTrapSignals,
@@ -410,6 +410,424 @@ export async function fetchApifyReviews(placeId: string): Promise<RawReview[]> {
     );
     return [];
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Apify Booking.com scraper (accommodation only)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const APIFY_BOOKING_ACTOR = "voyager~booking-scraper";
+
+function getFutureDateString(daysFromNow: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + daysFromNow);
+  return d.toISOString().split("T")[0];
+}
+
+/**
+ * Resolves a Booking.com property URL for a named accommodation.
+ * Searches by property name + city, returns the best matching URL.
+ * Returns null if no confident match found or on any failure.
+ *
+ * Actor: voyager/booking-scraper
+ * Called post-Gate-1 for accommodation candidates only.
+ */
+export async function resolveBookingComUrl(
+  propertyName: string,
+  cityName: string
+): Promise<string | null> {
+  console.log(`[stage1:booking] Resolving URL for "${propertyName}" in ${cityName}`);
+  if (!APIFY_KEY) {
+    console.warn(`[stage1:booking] No APIFY_KEY set, skipping URL resolution`);
+    return null;
+  }
+
+  try {
+    const runRes = await fetch(
+      `${APIFY_BASE}/acts/${APIFY_BOOKING_ACTOR}/runs`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${APIFY_KEY}`,
+        },
+        body: JSON.stringify({
+          search: cityName,
+          maxResults: 5,
+          checkIn: getFutureDateString(14),
+          checkOut: getFutureDateString(16),
+        }),
+      }
+    );
+
+    if (!runRes.ok) {
+      console.warn(`[stage1:booking] Run start failed for "${propertyName}" (${runRes.status})`);
+      return null;
+    }
+
+    const run = await runRes.json();
+    const runId = run.data?.id;
+    if (!runId) {
+      console.warn(`[stage1:booking] Run start returned no run ID for "${propertyName}"`);
+      return null;
+    }
+
+    // Poll for completion
+    for (let attempt = 0; attempt < APIFY_MAX_POLL_ATTEMPTS; attempt++) {
+      await sleep(APIFY_POLL_INTERVAL_MS);
+
+      const statusRes = await fetch(
+        `${APIFY_BASE}/actor-runs/${runId}`,
+        { headers: { "Authorization": `Bearer ${APIFY_KEY}` } }
+      );
+
+      if (!statusRes.ok) continue;
+
+      const status = await statusRes.json();
+      const runStatus = status.data?.status;
+
+      if (runStatus === "SUCCEEDED") break;
+      if (["FAILED", "ABORTED", "TIMED-OUT"].includes(runStatus)) {
+        console.warn(`[stage1:booking] Run ${runId} ended with status ${runStatus} for "${propertyName}"`);
+        return null;
+      }
+    }
+
+    const datasetRes = await fetch(
+      `${APIFY_BASE}/actor-runs/${runId}/dataset/items`,
+      { headers: { "Authorization": `Bearer ${APIFY_KEY}` } }
+    );
+
+    if (!datasetRes.ok) {
+      console.warn(`[stage1:booking] Dataset fetch failed for "${propertyName}" (${datasetRes.status})`);
+      return null;
+    }
+
+    const items: Array<{ name?: string; url?: string }> = await datasetRes.json();
+
+    if (!Array.isArray(items) || items.length === 0) {
+      console.warn(`[stage1:booking] No results for "${propertyName}" in ${cityName}`);
+      return null;
+    }
+
+    const nameLower = propertyName.toLowerCase();
+    const match = items.find(
+      (item) => item.name && item.url && item.name.toLowerCase().includes(nameLower)
+    ) ?? items.find(
+      (item) => item.name && item.url && nameLower.includes(item.name.toLowerCase())
+    );
+
+    if (!match?.url) {
+      console.warn(`[stage1:booking] No confident name match for "${propertyName}" among ${items.length} results`);
+      return null;
+    }
+
+    const parsed = new URL(match.url);
+    return parsed.origin + parsed.pathname;
+  } catch (err) {
+    console.warn(
+      `[stage1:booking] resolveBookingComUrl failed for "${propertyName}":`,
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
+/**
+ * Fetches full Booking.com property data for a known URL.
+ * Includes facilities, category scores, room data, and surroundings.
+ * Returns null on any failure — never blocks the pipeline.
+ *
+ * Actor: voyager/booking-scraper with surroundings add-on enabled.
+ * Called post-Gate-1 for accommodation candidates only, after URL is resolved.
+ */
+export async function fetchBookingComData(
+  bookingUrl: string,
+  apifyRunId?: string
+): Promise<BookingComData | null> {
+  console.log(`[stage1:booking] Fetching property data for ${bookingUrl}`);
+  if (!APIFY_KEY) {
+    console.warn(`[stage1:booking] No APIFY_KEY set, skipping property fetch`);
+    return null;
+  }
+
+  try {
+    const runRes = await fetch(
+      `${APIFY_BASE}/acts/${APIFY_BOOKING_ACTOR}/runs`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${APIFY_KEY}`,
+        },
+        body: JSON.stringify({
+          startUrls: [{ url: bookingUrl }],
+          maxResults: 1,
+          includeSurroundings: true,
+        }),
+      }
+    );
+
+    if (!runRes.ok) {
+      console.warn(`[stage1:booking] Run start failed for ${bookingUrl} (${runRes.status})`);
+      return null;
+    }
+
+    const run = await runRes.json();
+    const runId = run.data?.id;
+    if (!runId) {
+      console.warn(`[stage1:booking] Run start returned no run ID for ${bookingUrl}`);
+      return null;
+    }
+
+    // Poll for completion
+    for (let attempt = 0; attempt < APIFY_MAX_POLL_ATTEMPTS; attempt++) {
+      await sleep(APIFY_POLL_INTERVAL_MS);
+
+      const statusRes = await fetch(
+        `${APIFY_BASE}/actor-runs/${runId}`,
+        { headers: { "Authorization": `Bearer ${APIFY_KEY}` } }
+      );
+
+      if (!statusRes.ok) continue;
+
+      const status = await statusRes.json();
+      const runStatus = status.data?.status;
+
+      if (runStatus === "SUCCEEDED") break;
+      if (["FAILED", "ABORTED", "TIMED-OUT"].includes(runStatus)) {
+        console.warn(`[stage1:booking] Run ${runId} ended with status ${runStatus} for ${bookingUrl}`);
+        return null;
+      }
+    }
+
+    const datasetRes = await fetch(
+      `${APIFY_BASE}/actor-runs/${runId}/dataset/items`,
+      { headers: { "Authorization": `Bearer ${APIFY_KEY}` } }
+    );
+
+    if (!datasetRes.ok) {
+      console.warn(`[stage1:booking] Dataset fetch failed for ${bookingUrl} (${datasetRes.status})`);
+      return null;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items: any[] = await datasetRes.json();
+
+    if (!Array.isArray(items) || items.length === 0) {
+      console.warn(`[stage1:booking] Empty dataset for ${bookingUrl}`);
+      return null;
+    }
+
+    const result = items[0];
+
+    const cleanUrl = (() => {
+      try {
+        const p = new URL(result.url ?? bookingUrl);
+        return p.origin + p.pathname;
+      } catch {
+        return bookingUrl;
+      }
+    })();
+
+    // Deduplicate and filter room facilities
+    const roomDimensionRe = /^\d+ feet²$/;
+    const roomFacilities = Array.from(
+      new Set<string>(
+        (result.rooms ?? [])
+          .flatMap((r: { facilities?: string[] }) => r.facilities ?? [])
+          .filter((f: string) => !roomDimensionRe.test(f))
+      )
+    );
+
+    const checkIn: string | null = (() => {
+      const raw: string | null = result.checkIn ?? null;
+      if (!raw) return null;
+      return raw.split("\n")[0].trim() || null;
+    })();
+
+    const hasFreeCanc: boolean =
+      result.rooms?.some(
+        (r: { options?: Array<{ freeCancellation?: boolean }> }) =>
+          r.options?.some((o) => o.freeCancellation === true)
+      ) ?? false;
+
+    return {
+      hotel_id: result.hotelId,
+      booking_url: cleanUrl,
+      rating: result.rating,
+      rating_label: result.ratingLabel,
+      review_count: result.reviews,
+      category_scores: (result.categoryReviews ?? []).map(
+        (c: { title: string; score: number }) => ({ title: c.title, score: c.score })
+      ),
+      stars: result.stars ?? null,
+      breakfast: result.breakfast ?? null,
+      facility_groups: (result.facilities ?? []).map(
+        (group: {
+          name: string;
+          overview?: string | null;
+          facilities?: Array<{
+            name: string;
+            id?: number;
+            additionalInfo?: { requiresAdditionalCharge?: boolean; isOffSite?: boolean };
+          }>;
+        }) => ({
+          name: group.name,
+          overview: group.overview ?? null,
+          facilities: (group.facilities ?? []).map((f) => ({
+            name: f.name,
+            requiresAdditionalCharge: f.additionalInfo?.requiresAdditionalCharge ?? false,
+            isOffSite: f.additionalInfo?.isOffSite ?? false,
+            id: f.id,
+          })),
+        })
+      ),
+      room_facilities: roomFacilities,
+      check_in: checkIn,
+      check_out: result.checkOut ?? null,
+      has_free_cancellation: hasFreeCanc,
+      scraped_at: result.timeOfScrapeISO ?? new Date().toISOString(),
+      apify_run_id: apifyRunId ?? null,
+    };
+  } catch (err) {
+    console.warn(
+      `[stage1:booking] fetchBookingComData failed for ${bookingUrl}:`,
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
+/**
+ * Cache-only lookup for pre-fetched Booking.com data.
+ * Falls back to null on miss — no live Apify calls.
+ * Always resolves — never throws.
+ */
+export async function resolveAndFetchBookingComData(
+  propertyName: string,
+  citySlug: string
+): Promise<BookingComData | null> {
+  try {
+    const { lookupBookingComCache } = await import("@/pipeline/booking-cache");
+    const cached = lookupBookingComCache(propertyName, citySlug);
+    if (cached !== null) {
+      console.log(`[stage1:booking] Cache hit for "${propertyName}"`);
+      return cached;
+    }
+    console.log(`[stage1:booking] Cache miss for "${propertyName}", no live fallback`);
+    return null;
+  } catch (err) {
+    console.warn(
+      `[stage1:booking] resolveAndFetchBookingComData failed for "${propertyName}":`,
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
+/**
+ * Pre-fetches all Booking.com accommodation data for a city and saves it as a
+ * local cache file at src/pipeline/data/booking-cache-{citySlug}.json.
+ * Run once per city before the accommodation pipeline — never during it.
+ *
+ * Actor: voyager/booking-scraper with maxResults: 0 (unlimited).
+ */
+export async function prefetchBookingComCity(
+  citySlug: string,
+  cityName: string
+): Promise<{ resultsCount: number; filePath: string }> {
+  const fs = await import("fs");
+  const path = await import("path");
+
+  if (!APIFY_KEY) {
+    throw new Error("[prefetch:booking] APIFY_KEY not set");
+  }
+
+  console.log(`[prefetch:booking] Fetching all Booking.com data for ${cityName}`);
+
+  const runRes = await fetch(
+    `${APIFY_BASE}/acts/${APIFY_BOOKING_ACTOR}/runs`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${APIFY_KEY}`,
+      },
+      body: JSON.stringify({
+        search: cityName,
+        maxResults: 0,
+        checkIn: getFutureDateString(14),
+        checkOut: getFutureDateString(16),
+      }),
+    }
+  );
+
+  if (!runRes.ok) {
+    throw new Error(
+      `[prefetch:booking] Run start failed for "${cityName}" (${runRes.status})`
+    );
+  }
+
+  const run = await runRes.json();
+  const runId = run.data?.id;
+  if (!runId) {
+    throw new Error(`[prefetch:booking] Run start returned no run ID for "${cityName}"`);
+  }
+
+  // Poll for completion
+  for (let attempt = 0; attempt < APIFY_MAX_POLL_ATTEMPTS; attempt++) {
+    await sleep(APIFY_POLL_INTERVAL_MS);
+
+    const statusRes = await fetch(
+      `${APIFY_BASE}/actor-runs/${runId}`,
+      { headers: { "Authorization": `Bearer ${APIFY_KEY}` } }
+    );
+
+    if (!statusRes.ok) continue;
+
+    const status = await statusRes.json();
+    const runStatus = status.data?.status;
+
+    if (runStatus === "SUCCEEDED") break;
+    if (["FAILED", "ABORTED", "TIMED-OUT"].includes(runStatus)) {
+      throw new Error(
+        `[prefetch:booking] Run ${runId} ended with status ${runStatus} for "${cityName}"`
+      );
+    }
+  }
+
+  const datasetRes = await fetch(
+    `${APIFY_BASE}/actor-runs/${runId}/dataset/items`,
+    { headers: { "Authorization": `Bearer ${APIFY_KEY}` } }
+  );
+
+  if (!datasetRes.ok) {
+    throw new Error(
+      `[prefetch:booking] Dataset fetch failed for "${cityName}" (${datasetRes.status})`
+    );
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const items: any[] = await datasetRes.json();
+
+  if (!Array.isArray(items)) {
+    throw new Error(`[prefetch:booking] Dataset response is not an array for "${cityName}"`);
+  }
+
+  const filePath = path.join(
+    process.cwd(),
+    "src", "pipeline", "data",
+    `booking-cache-${citySlug}.json`
+  );
+
+  fs.writeFileSync(filePath, JSON.stringify(items, null, 2), "utf-8");
+
+  console.log(
+    `[prefetch:booking] Complete — ${items.length} properties saved to ${filePath}`
+  );
+
+  return { resultsCount: items.length, filePath };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1099,7 +1517,7 @@ async function fetchBookingCandidates(
       pretriage_rejected: false,
     }));
   } catch (err) {
-    console.warn("[stage1] Booking.com fetch failed:", err instanceof Error ? err.message : err);
+    console.log("[stage1] Accommodation secondary source not yet configured.");
     return [];
   }
 }
