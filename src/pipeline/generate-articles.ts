@@ -561,6 +561,7 @@ export async function generateArticlesForCity(
 
   // Upsert into article_topic_candidates
   for (const cluster of scored) {
+    // Insert new rows only — do not touch existing generation_status
     await supabase
       .from('article_topic_candidates')
       .upsert(
@@ -577,9 +578,21 @@ export async function generateArticlesForCity(
         },
         {
           onConflict: 'city_id,topic_text',
-          ignoreDuplicates: false,
+          ignoreDuplicates: true,
         }
       );
+
+    // Update frequency/score on existing rows — never reset generation_status or article_id
+    await supabase
+      .from('article_topic_candidates')
+      .update({
+        suggestion_frequency: cluster.frequency,
+        priority_score: cluster.score,
+        source_entry_ids: cluster.entryIds,
+      })
+      .eq('city_id', cityId)
+      .eq('topic_text', cluster.canonical)
+      .not('generation_status', 'eq', 'pending');
   }
 
   // Fetch top 15 pending candidates
@@ -593,6 +606,7 @@ export async function generateArticlesForCity(
     .eq('city_id', cityId)
     .eq('approved_for_generation', true)
     .in('generation_status', statusFilter)
+    .is('article_id', null)
     .order('priority_score', { ascending: false })
     .limit(15);
 
