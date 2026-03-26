@@ -21,7 +21,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Category } from "@/types/pipeline";
+import type { BookingComData, Category } from "@/types/pipeline";
 import {
   batchArray,
   generateBatchId,
@@ -98,6 +98,7 @@ interface CandidateForGate2 {
     review_source?: "apify" | "google";
     price_level?: number | null;
     early_trap_flag?: boolean;
+    booking_com_data?: BookingComData | null;
   };
   gate1_result: {
     result: "pass" | "reject" | "borderline";
@@ -183,6 +184,7 @@ async function buildGate2Payload(
     tripadvisor_rank: tripadvisorRank,
     gate1_borderline: gate1.result === "borderline",
     gate1_criteria_triggered: gate1.criteria_triggered,
+    booking_com_data: enrichment.booking_com_data ?? null,
   };
 }
 

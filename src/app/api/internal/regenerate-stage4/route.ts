@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
   // Load city context
   const { data: city, error: cityError } = await supabase
     .from('cities')
-    .select('id, display_name, country, city_context')
+    .select('id, slug, display_name, country, city_context')
     .eq('id', body.city_id)
     .single();
 
@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
 
   const cityContext: CityContext = {
     id: city.id,
+    slug: city.slug,
     name: city.display_name,
     country: city.country,
     top_tourist_landmarks: city.city_context?.top_tourist_landmarks ?? [],

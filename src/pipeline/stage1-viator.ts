@@ -59,21 +59,18 @@ const destinationIdCache = new Map<string, string>();
 // Types — Viator API response shapes (minimal — only fields we use)
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface ViatorDestination {
-  destinationId: number;
-  destinationUrlName: string;
-  destinationName: string;
-  parentId: number | null;
-  type: string; // "CITY" | "REGION" | "COUNTRY" | etc.
-  iataCode: string | null;
-  coordinates?: {
-    latitude: number;
-    longitude: number;
-  };
+interface ViatorFreetextDestination {
+  id: number;
+  name: string;
+  parentDestinationId: number;
+  parentDestinationName: string;
 }
 
-interface ViatorDestinationsResponse {
-  data: ViatorDestination[];
+interface ViatorFreetextResponse {
+  destinations?: {
+    totalCount: number;
+    results: ViatorFreetextDestination[];
+  };
 }
 
 interface ViatorProductReviewSummary {
@@ -122,9 +119,8 @@ interface ViatorSearchResponse {
 /**
  * Resolves a city name to a Viator destination ID.
  *
- * Searches the full taxonomy for a CITY-type destination whose name matches
- * the provided city name (case-insensitive, trimmed). Falls back to partial
- * match if no exact match found.
+ * Uses POST /search/freetext with searchType DESTINATIONS to look up the city.
+ * The first result is used — freetext search returns the best match first.
  *
  * Caches results in memory — safe to call multiple times per run.
  *
@@ -140,65 +136,58 @@ export async function resolveViatorDestinationId(cityName: string): Promise<stri
   const apiKey = process.env.VIATOR_API_KEY;
   if (!apiKey) throw new Error("VIATOR_API_KEY is not set");
 
-  const data = await withRetry(async () => {
-    const response = await fetch(`${VIATOR_BASE_URL}/v1/taxonomy/destinations`, {
-      method: "GET",
+  const searchFreetext = async (term: string): Promise<ViatorFreetextDestination[]> => {
+    const response = await fetch(`${VIATOR_BASE_URL}/search/freetext`, {
+      method: "POST",
       headers: {
         "exp-api-key": apiKey,
+        "Content-Type": "application/json",
         "Accept": "application/json;version=2.0",
         "Accept-Language": "en-US",
       },
+      body: JSON.stringify({
+        searchTerm: term,
+        currency: "EUR",
+        searchTypes: [{ searchType: "DESTINATIONS", pagination: { start: 1, count: 5 } }],
+      }),
     });
 
     if (!response.ok) {
       throw new PipelineStageError(
         "stage1:viator:destinations",
         cityName,
-        `Destinations endpoint returned ${response.status}: ${await response.text()}`
+        `Freetext search returned ${response.status}: ${await response.text()}`
       );
     }
 
-    return response.json() as Promise<ViatorDestinationsResponse>;
-  }, "stage1:viator:destinations");
+    const data = await response.json() as ViatorFreetextResponse;
+    return data.destinations?.results ?? [];
+  };
 
-  const normalised = cacheKey;
-
-  // Exact match first (city-type destinations only)
-  let match = data.data.find(
-    (d) =>
-      d.type === "CITY" &&
-      d.destinationName.toLowerCase().trim() === normalised
-  );
-
-  // Fall back to partial match (e.g. "Kraków" vs "Krakow")
-  if (!match) {
-    match = data.data.find(
-      (d) =>
-        d.type === "CITY" &&
-        (d.destinationName.toLowerCase().includes(normalised) ||
-          normalised.includes(d.destinationName.toLowerCase().trim()))
-    );
+  // Try exact city name first; fall back to ASCII-normalized version (handles diacritics like Kraków → Krakow)
+  let results = await withRetry(() => searchFreetext(cityName), "stage1:viator:destinations");
+  if (results.length === 0) {
+    const asciiName = cityName.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (asciiName !== cityName) {
+      console.log(`[stage1-viator] No results for "${cityName}", retrying with "${asciiName}"`);
+      results = await withRetry(() => searchFreetext(asciiName), "stage1:viator:destinations");
+    }
   }
 
-  // Broader fallback — any type (e.g. district, region)
-  if (!match) {
-    match = data.data.find(
-      (d) => d.destinationName.toLowerCase().trim() === normalised
-    );
-  }
-
-  if (!match) {
+  if (results.length === 0) {
     throw new PipelineStageError(
       "stage1:viator:destinations",
       cityName,
-      `No Viator destination found for city: "${cityName}". Check the taxonomy endpoint for the correct name.`
+      `No Viator destination found for city: "${cityName}".`
     );
   }
 
-  const destinationId = String(match.destinationId);
+  // Use first result — freetext search returns best match first
+  const match = results[0];
+  const destinationId = String(match.id);
   destinationIdCache.set(cacheKey, destinationId);
 
-  console.log(`[stage1-viator] Resolved "${cityName}" → destination ID ${destinationId} (${match.destinationName})`);
+  console.log(`[stage1-viator] Resolved "${cityName}" → destination ID ${destinationId} (${match.name})`);
 
   return destinationId;
 }

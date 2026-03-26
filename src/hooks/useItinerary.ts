@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import type { Itinerary, ItinerarySlot, TimeBlock } from "@/types/itinerary";
+import { useState, useEffect, useCallback, useRef } from "react";
+import type { Itinerary, ItineraryDay, ItinerarySlot, TimeBlock } from "@/types/itinerary";
 import type { EntryCardData } from "@/lib/entries";
 import type { ScoredEntry } from "@/lib/preference-filter";
 import { generateDays } from "@/lib/day-generator";
@@ -21,8 +21,11 @@ function makeSnapshot(entry: EntryCardData, citySlug: string): ItinerarySlot["en
   };
 }
 
-export function useItinerary(citySlug: string) {
+export function useItinerary(citySlug: string, onFinalised?: () => void) {
   const [itinerary, setItinerary] = useState<Itinerary | null>(null);
+  // Stable ref so finaliseItinerary's useCallback dep array stays clean
+  const onFinalisedRef = useRef(onFinalised);
+  useEffect(() => { onFinalisedRef.current = onFinalised; }, [onFinalised]);
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -52,6 +55,26 @@ export function useItinerary(citySlug: string) {
         days: generateDays(tripLength, arrival, scoredEntries, citySlug),
       };
       setItinerary(next);
+    },
+    [citySlug]
+  );
+
+  const hydrateItinerary = useCallback(
+    (days: ItineraryDay[], tripLength: number) => {
+      const now = new Date().toISOString();
+      const next: Itinerary = {
+        id: crypto.randomUUID(),
+        citySlug,
+        createdAt: now,
+        updatedAt: now,
+        tripLength,
+        days,
+      };
+      setItinerary(next);
+      localStorage.setItem(
+        `sonder_itinerary_${citySlug}`,
+        JSON.stringify(next)
+      );
     },
     [citySlug]
   );
@@ -168,6 +191,8 @@ export function useItinerary(citySlug: string) {
       } catch {}
       return finalised;
     });
+    // Post-finalisation trigger -- fires after state is scheduled
+    onFinalisedRef.current?.();
   }, [citySlug]);
 
   const clearItinerary = useCallback(() => {
@@ -180,6 +205,7 @@ export function useItinerary(citySlug: string) {
   return {
     itinerary,
     initItinerary,
+    hydrateItinerary,
     addEntry,
     removeEntry,
     swapEntry,

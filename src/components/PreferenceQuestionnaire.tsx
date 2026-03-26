@@ -151,9 +151,10 @@ function Tile({ label, description, selected, onClick }: TileProps) {
 
 interface Props {
   citySlug: string;
+  onComplete?: (prefs: TripPreferences) => void;
 }
 
-export default function PreferenceQuestionnaire({ citySlug }: Props) {
+export default function PreferenceQuestionnaire({ citySlug, onComplete }: Props) {
   const router = useRouter();
 
   const [step, setStep] = useState(0);
@@ -218,34 +219,6 @@ export default function PreferenceQuestionnaire({ citySlug }: Props) {
     );
   };
 
-  // Auto-redirect from completion screen after 3 s
-  useEffect(() => {
-    if (step !== 6) return;
-    const t = setTimeout(() => {
-      const prefs: TripPreferences = {
-        citySlug,
-        arrival: arrival || null,
-        departure: departure || null,
-        datesFlexible,
-        groupSize: groupSize!,
-        pace: pace!,
-        interests,
-        accommodationStyle: accommodationStyle!,
-        tripStyle: tripStyle!,
-      };
-      try {
-        localStorage.setItem(
-          `sonder_preferences_${citySlug}`,
-          JSON.stringify(prefs),
-        );
-      } catch {
-        // SSR / private browsing — carry on
-      }
-      router.push(`/${citySlug}`);
-    }, 3000);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
 
   const handleExploreNow = () => {
     cancelAutoAdvance();
@@ -268,7 +241,11 @@ export default function PreferenceQuestionnaire({ citySlug }: Props) {
     } catch {
       // SSR / private browsing
     }
-    router.push(`/${citySlug}`);
+    if (onComplete) {
+      onComplete(prefs);
+    } else {
+      router.push(`/${citySlug}`);
+    }
   };
 
   const isQuestion = step < 6;

@@ -30,6 +30,7 @@ export async function fetchCityContext(
     .from("cities")
     .select(`
       id,
+      slug,
       display_name,
       city_name_local,
       country,
@@ -55,6 +56,7 @@ export async function fetchCityContext(
   return {
     // Base CityContext fields (utils.ts)
     id:                    data.id,
+    slug:                  (data as any).slug ?? "",
     name:                  data.display_name,
     country:               (data as any).country ?? "",
     top_tourist_landmarks: (data as any).city_context?.top_tourist_landmarks ?? [],

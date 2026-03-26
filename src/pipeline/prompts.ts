@@ -14,7 +14,7 @@
  *   - Stage 4 has two tiers: full (72+) and minimal (65-71). [v1.1]
  */
 
-import type { Category, Season } from "@/types/pipeline";
+import type { BookingComData, Category, Season } from "@/types/pipeline";
 
 // ---------------------------------------------------------------------------
 // Input payload types
@@ -68,6 +68,8 @@ export interface Gate2CandidatePayload {
   tripadvisor_rank: number | null;
   gate1_borderline: boolean;
   gate1_criteria_triggered: number;
+  /** Populated for accommodation candidates only. Null for all other categories. */
+  booking_com_data?: BookingComData | null;
 }
 
 /** Payload sent to Stage 4 full editorial (72+ score). */
@@ -210,23 +212,29 @@ Are prices significantly above local market rate without corresponding quality? 
 
 3. review_bifurcation
 Do reviews split sharply between high-rating tourists and low-rating locals? Bimodal distribution, negative reviews mentioning "tourist trap", "overpriced", "rude to tourists".
+[TOUR: do not evaluate tourist/local split -- all tour reviewers are tourists by nature. Instead evaluate value/generic split: do reviews split between people who found genuine value vs. people who felt the experience was rushed, generic, oversold, or identical to competing operators?]
 
 4. local_absence
+[ACCOMMODATION: score false -- hotels are tourist-facing by nature. Absence of local guests is not a negative signal.]
+[TOUR: score false -- tours are tourist-facing by definition. Absence of local reviewers is expected and not a negative signal.]
 Is there evidence that locals do not patronise this place? No local-language reviews, absent from local platforms, no Local Guide reviews.
 
 5. menu_red_flags
-[RESTAURANTS ONLY -- score false for other categories]
+[RESTAURANTS ONLY -- score false for tours, accommodation, cafes, sights, and nightlife]
 Generic tourist menus, picture menus, aggressive touts, "traditional" dishes locals do not eat.
 [CAFES: score false for menu_red_flags -- cafes do not have menus in the traditional sense.]
 
 6. homogenized_experience
 Could this experience exist in any European tourist city without modification? No city-specific character, interchangeable with venues in Prague, Budapest, or Vienna.
 [CAFES: only trigger if this is a chain cafe (e.g. international franchise). Independent specialty cafes with a similar aesthetic across cities are not homogenized.]
+[TOUR: apply with heightened weight. Generic "Best of [City]" walking tours hitting standard landmarks with no distinctive content, operator expertise, or narrative angle are the primary trap pattern for this category. A tour must offer something -- specialist knowledge, unusual access, distinctive storytelling, or a non-standard route -- that cannot be replicated by booking any of the top 10 Viator results.]
 
 7. manufactured_authenticity
 Is the "local" or "traditional" framing performed rather than genuine? Folk costumes, "Authentic" in the name, cultural cliches for tourist consumption.
 
 8. platform_local_disconnect
+[ACCOMMODATION: score false -- local platform presence is not a meaningful signal for accommodation.]
+[TOUR: score false -- tours are not reviewed on local platforms. High TripAdvisor or Viator presence is expected and neutral.]
 High TripAdvisor or Google rank among tourists, absent from local-language platforms and food blogs?
 
 THRESHOLD RULES:
@@ -318,6 +326,26 @@ If a candidate scores 55-64 AND you detect highly emotional, specific language a
   soul_exception_flagged: true
   soul_exception_justification: one sentence naming the signal and reviewer count.
 The soul exception is rare. Generic positive sentiment does not qualify.
+
+BOOKING.COM DATA (accommodation only):
+If booking_com_data is present in the candidate payload, use it as follows:
+
+- category_scores provides structured ratings for Staff, Cleanliness, Comfort,
+  Value for money, Location, and Free WiFi on a 1–10 scale. Use these directly
+  when scoring review_consensus and consistency — they are more reliable than
+  inferring scores from review text.
+
+- Value for money score maps directly to value_alignment scoring. A score of
+  8.5+ is a strong positive signal. Below 7.0 is a mild negative signal.
+
+- facility_groups provides verified amenity data. Use this for factual amenity
+  assessment — do not infer amenities from review text when structured data exists.
+
+- has_free_cancellation: true is a mild positive signal for booking_tier
+  classification — easier booking pathway.
+
+- If booking_com_data is null or absent, score using Google Maps data only.
+  Do not penalise candidates for missing Booking.com data.
 
 BOOKING TIER: Assign based on price_level from Google Maps data provided.
 - price_level 1 (Inexpensive) → booking_tier 1

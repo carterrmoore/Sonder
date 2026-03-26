@@ -8,12 +8,13 @@ import { useRouter } from "next/navigation";
 import CategoryPill from "@/components/ui/CategoryPill";
 import SwapDrawer from "@/components/SwapDrawer";
 import ItinerarySummary from "@/components/ItinerarySummary";
+import { SaveModal } from "@/components/SaveModal";
 import { CATEGORY_DISPLAY, COLOR_GROUPS } from "@/pipeline/constants";
 import { applyPreferences } from "@/lib/preference-filter";
 import type { ScoredEntry } from "@/lib/preference-filter";
 import type { EntryCardData } from "@/lib/entries";
 import type { TripPreferences } from "@/types/preferences";
-import type { ItinerarySlot, TimeBlock } from "@/types/itinerary";
+import type { ItineraryDay, ItinerarySlot, TimeBlock } from "@/types/itinerary";
 import type { Category } from "@/types/pipeline";
 import { tokens } from "@/lib/tokens";
 import { buildPhotoUrl, fetchPlacePhotos } from "@/lib/maps";
@@ -135,12 +136,24 @@ function buildAlternatives(
 interface ItineraryBuilderProps {
   citySlug: string;
   entries: EntryCardData[];
+  initialDays?: ItineraryDay[];
+  tripLength?: number;
+  isEditMode?: boolean;
+  editItineraryId?: string;
 }
 
-export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilderProps) {
+export default function ItineraryBuilder({
+  citySlug,
+  entries,
+  initialDays,
+  tripLength,
+  isEditMode = false,
+  editItineraryId,
+}: ItineraryBuilderProps) {
   const {
     itinerary,
     initItinerary,
+    hydrateItinerary,
     addEntry,
     removeEntry,
     swapEntry,
@@ -157,7 +170,10 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [confirmedDays, setConfirmedDays] = useState<Set<number>>(new Set());
   const [showSummary, setShowSummary] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [modifiedDays, setModifiedDays] = useState<Set<number>>(new Set());
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   useEffect(() => {
     try {
@@ -165,6 +181,16 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
       if (raw) setPreferences(JSON.parse(raw) as TripPreferences);
     } catch {}
   }, [citySlug]);
+
+  useEffect(() => {
+    if (!initialDays || initialDays.length === 0) return;
+    if (!isEditMode) {
+      const existing = localStorage.getItem(`sonder_itinerary_${citySlug}`);
+      if (existing) return; // live session takes precedence in normal mode
+    }
+    hydrateItinerary(initialDays, tripLength ?? initialDays.length);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const scoredEntries = useMemo(
     () => applyPreferences(entries, preferences),
@@ -204,6 +230,31 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
 
   const placedEntryIds = addedEntryIds;
 
+  const slotCount = useMemo(
+    () => (itinerary ? itinerary.days.reduce((n, d) => n + d.slots.length, 0) : 0),
+    [itinerary]
+  );
+
+  const focusNeighbourhood = useMemo(() => {
+    if (!itinerary) return "";
+    const counts = new Map<string, number>();
+    for (const day of itinerary.days) {
+      for (const slot of day.slots) {
+        const n =
+          typeof slot.entrySnapshot.neighbourhood === "string"
+            ? slot.entrySnapshot.neighbourhood
+            : null;
+        if (n) counts.set(n, (counts.get(n) ?? 0) + 1);
+      }
+    }
+    let max = 0;
+    let result = "";
+    for (const [n, count] of counts) {
+      if (count > max) { max = count; result = n; }
+    }
+    return result || "Kraków";
+  }, [itinerary]);
+
   useEffect(() => {
     if (!itinerary) return;
     const allConfirmed =
@@ -227,9 +278,17 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
   }, []);
 
   const handleSave = useCallback(() => {
-    finaliseItinerary();
-    router.push(`/${citySlug}`);
-  }, [finaliseItinerary, router, citySlug]);
+    setShowSaveModal(true);
+  }, []);
+
+  const handleSaveComplete = useCallback(
+    (_method: "account" | "google" | "email", savedItineraryId: string) => {
+      setShowSaveModal(false);
+      finaliseItinerary();
+      router.push(`/krakow/itinerary/${savedItineraryId}`);
+    },
+    [finaliseItinerary, router]
+  );
 
   const mainRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -259,8 +318,57 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
     return [...sameNeighbourhood, ...other].slice(0, 8);
   }, [swapTarget, scoredEntries, placedEntryIds]);
 
+  // ── Edit mode helpers ────────────────────────────────────────────────────
+
+  function trackAndRemove(slotId: string) {
+    if (isEditMode && itinerary) {
+      const dayNum = itinerary.days.find((d) =>
+        d.slots.some((s) => s.id === slotId)
+      )?.dayNumber;
+      if (dayNum !== undefined) {
+        setModifiedDays((prev) => new Set([...prev, dayNum]));
+      }
+    }
+    removeEntry(slotId);
+  }
+
+  function trackAndSwap(slotId: string, newEntry: EntryCardData) {
+    if (isEditMode && itinerary) {
+      const dayNum = itinerary.days.find((d) =>
+        d.slots.some((s) => s.id === slotId)
+      )?.dayNumber;
+      if (dayNum !== undefined) {
+        setModifiedDays((prev) => new Set([...prev, dayNum]));
+      }
+    }
+    swapEntry(slotId, newEntry);
+  }
+
+  async function handleEditDone() {
+    if (!itinerary || !editItineraryId) return;
+    setIsSavingEdit(true);
+    // TODO: Run Gate 0 check on net-new entries before saving.
+    // Net-new = entries in current days that weren't in the original editItinerary.days.
+    // Deferred to post-launch -- add to outstanding tasks.
+    try {
+      const res = await fetch(`/api/itineraries/${editItineraryId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          days: itinerary.days,
+          total_days: itinerary.tripLength,
+        }),
+      });
+      if (res.ok) {
+        router.push(`/krakow/itinerary/${editItineraryId}`);
+      }
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }
+
   // ── State A — setup ──────────────────────────────────────────────────────
-  if (!itinerary) {
+  if (!itinerary && !isEditMode) {
     const canStart = hasSpecificDates || selectedTripLength !== null;
 
     return (
@@ -389,15 +497,59 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
     );
   }
 
-  // ── State C — summary screen ─────────────────────────────────────────────
-  if (showSummary) {
+  // ── Edit mode loading (hydrating from database) ──────────────────────────
+  if (!itinerary) {
     return (
-      <ItinerarySummary
-        itinerary={itinerary}
-        totalEntryCount={entries.length}
-        onSave={handleSave}
-        onBackToEdit={handleBackToEdit}
-      />
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          backgroundColor: tokens.ink,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <p
+          style={{
+            fontFamily: tokens.fontBody,
+            fontSize: tokens.textBodySm,
+            color: tokens.warm,
+            opacity: 0.45,
+          }}
+        >
+          Loading your itinerary...
+        </p>
+      </div>
+    );
+  }
+
+  // ── State C — summary screen (with save modal overlay) ───────────────────
+  if (showSummary && !isEditMode) {
+    const CITY_NAMES: Record<string, string> = { krakow: "Kraków" };
+    return (
+      <>
+        <ItinerarySummary
+          itinerary={itinerary}
+          totalEntryCount={entries.length}
+          onSave={handleSave}
+          onBackToEdit={handleBackToEdit}
+        />
+        <SaveModal
+          isOpen={showSaveModal}
+          itineraryId={itinerary.id}
+          itinerary={itinerary}
+          itinerarySummary={{
+            cityName:           CITY_NAMES[citySlug] ?? citySlug,
+            tripLength:         itinerary.tripLength,
+            entryCount:         slotCount,
+            focusNeighbourhood,
+            startDate:          preferences?.arrival ?? null,
+            endDate:            preferences?.departure ?? null,
+          }}
+          onSaveComplete={handleSaveComplete}
+        />
+      </>
     );
   }
 
@@ -417,6 +569,85 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
           backgroundColor: "var(--color-warm)",
         }}
       >
+        {/* ── Edit mode header ────────────────────────────────────────────── */}
+        {isEditMode && (
+          <div
+            style={{
+              backgroundColor: tokens.ink,
+              padding: "14px 24px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexShrink: 0,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontFamily: tokens.fontBody,
+                  fontSize: "11px",
+                  textTransform: "uppercase",
+                  letterSpacing: "1.5px",
+                  color: "rgba(255,255,255,0.35)",
+                  marginBottom: "2px",
+                }}
+              >
+                Editing your trip
+              </div>
+              <div
+                style={{
+                  fontFamily: tokens.fontDisplay,
+                  fontSize: "18px",
+                  color: "#fff",
+                  fontWeight: 400,
+                }}
+              >
+                Kraków &middot; {itinerary.tripLength} day
+                {itinerary.tripLength !== 1 ? "s" : ""} confirmed
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <button
+                type="button"
+                onClick={() =>
+                  router.push(`/krakow/itinerary/${editItineraryId}`)
+                }
+                style={{
+                  fontFamily: tokens.fontBody,
+                  fontSize: "12px",
+                  color: "rgba(255,255,255,0.5)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: "0",
+                }}
+              >
+                Back to itinerary
+              </button>
+              <button
+                type="button"
+                onClick={handleEditDone}
+                disabled={isSavingEdit}
+                style={{
+                  fontFamily: tokens.fontBody,
+                  fontSize: "12px",
+                  fontWeight: 500,
+                  backgroundColor: isSavingEdit
+                    ? "rgba(196, 146, 42, 0.6)"
+                    : "#C4922A",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "8px 14px",
+                  cursor: isSavingEdit ? "not-allowed" : "pointer",
+                }}
+              >
+                {isSavingEdit ? "Saving..." : "Done"}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* ── Full-width tab bar ──────────────────────────────────────────── */}
         <div
           style={{
@@ -429,28 +660,31 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
             padding: "0 var(--spacing-px-24)",
           }}
         >
-          {/* Back link */}
-          <a
-            href={`/${citySlug}`}
-            style={{
-              fontFamily: tokens.fontBody,
-              fontSize: tokens.textCaption,
-              color: tokens.ink,
-              opacity: 0.45,
-              textDecoration: "none",
-              marginRight: "var(--spacing-px-24)",
-              whiteSpace: "nowrap",
-              padding: "14px 0",
-            }}
-          >
-            ← Kraków guide
-          </a>
+          {/* Back link — hidden in edit mode */}
+          {!isEditMode && (
+            <a
+              href={`/${citySlug}`}
+              style={{
+                fontFamily: tokens.fontBody,
+                fontSize: tokens.textCaption,
+                color: tokens.ink,
+                opacity: 0.45,
+                textDecoration: "none",
+                marginRight: "var(--spacing-px-24)",
+                whiteSpace: "nowrap",
+                padding: "14px 0",
+              }}
+            >
+              ← Kraków guide
+            </a>
+          )}
 
           {/* Day tabs */}
           <div style={{ display: "flex", alignItems: "stretch", gap: 0, flex: 1 }}>
             {itinerary.days.map((day) => {
               const isActive = selectedDay === day.dayNumber;
               const isConfirmed = confirmedDays.has(day.dayNumber);
+              const isModified = modifiedDays.has(day.dayNumber);
               return (
                 <button
                   key={day.dayNumber}
@@ -488,22 +722,53 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                       (e.currentTarget as HTMLButtonElement).style.opacity = "0.5";
                   }}
                 >
-                  {isConfirmed && (
-                    <svg
-                      width="10"
-                      height="8"
-                      viewBox="0 0 10 8"
-                      fill="none"
-                      style={{ opacity: 0.5 }}
-                    >
-                      <path
-                        d="M1 4L3.5 6.5L9 1"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
+                  {isEditMode ? (
+                    isModified ? (
+                      <span
+                        style={{
+                          width: "6px",
+                          height: "6px",
+                          borderRadius: "50%",
+                          backgroundColor: "#C4922A",
+                          display: "inline-block",
+                          flexShrink: 0,
+                        }}
                       />
-                    </svg>
+                    ) : (
+                      <svg
+                        width="10"
+                        height="8"
+                        viewBox="0 0 10 8"
+                        fill="none"
+                        style={{ color: "#2d9e5a", opacity: 0.7 }}
+                      >
+                        <path
+                          d="M1 4L3.5 6.5L9 1"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    )
+                  ) : (
+                    isConfirmed && (
+                      <svg
+                        width="10"
+                        height="8"
+                        viewBox="0 0 10 8"
+                        fill="none"
+                        style={{ opacity: 0.5 }}
+                      >
+                        <path
+                          d="M1 4L3.5 6.5L9 1"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    )
                   )}
                   Day {day.dayNumber}
                 </button>
@@ -511,19 +776,21 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
             })}
           </div>
 
-          {/* Trip label */}
-          <span
-            style={{
-              fontFamily: tokens.fontBody,
-              fontSize: tokens.textCaption,
-              color: tokens.ink,
-              opacity: 0.35,
-              marginLeft: "var(--spacing-px-24)",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {itinerary.days.length} day{itinerary.days.length !== 1 ? "s" : ""}
-          </span>
+          {/* Trip label — hidden in edit mode (shown in edit header instead) */}
+          {!isEditMode && (
+            <span
+              style={{
+                fontFamily: tokens.fontBody,
+                fontSize: tokens.textCaption,
+                color: tokens.ink,
+                opacity: 0.35,
+                marginLeft: "var(--spacing-px-24)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {itinerary.days.length} day{itinerary.days.length !== 1 ? "s" : ""}
+            </span>
+          )}
         </div>
 
         {/* ── Two-column body ─────────────────────────────────────────────── */}
@@ -718,7 +985,7 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => removeEntry(slot.id)}
+                                  onClick={() => trackAndRemove(slot.id)}
                                   aria-label={`Remove ${slot.entrySnapshot.name}`}
                                   style={{
                                     background: "none",
@@ -754,7 +1021,7 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
               flexShrink: 0,
             }}
           >
-            {!confirmedDays.has(currentDay.dayNumber) ? (
+            {isEditMode ? null : !confirmedDays.has(currentDay.dayNumber) ? (
               <button
                 type="button"
                 onClick={() => handleConfirmDay(currentDay.dayNumber)}
@@ -965,7 +1232,7 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                             const slot = itinerary.days
                               .flatMap((d) => d.slots)
                               .find((s) => s.entryId === entry.id);
-                            if (slot) removeEntry(slot.id);
+                            if (slot) trackAndRemove(slot.id);
                           }}
                           style={{
                             width: "100%",
@@ -990,6 +1257,7 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
                           onClick={() => {
                             setJustAdded(entry.id);
                             addEntry(entry, selectedDay, activeTimeBlock);
+                            if (isEditMode) setModifiedDays((prev) => new Set([...prev, selectedDay]));
                             setTimeout(() => setJustAdded(null), 400);
                           }}
                           style={{
@@ -1026,8 +1294,8 @@ export default function ItineraryBuilder({ citySlug, entries }: ItineraryBuilder
           slot={swapTarget}
           alternatives={swapAlternatives}
           placedEntryIds={placedEntryIds}
-          onSwap={(slotId, newEntry) => swapEntry(slotId, newEntry)}
-          onRemove={(slotId) => removeEntry(slotId)}
+          onSwap={(slotId, newEntry) => trackAndSwap(slotId, newEntry)}
+          onRemove={(slotId) => trackAndRemove(slotId)}
           onClose={() => setSwapTarget(null)}
         />
       )}

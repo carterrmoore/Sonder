@@ -169,7 +169,8 @@ function checkLocalPresenceAndTADisconnect(
     !localPlatformPresent &&
     gate2Score >= 75 &&
     candidate.category !== "sight" &&
-    candidate.category !== "accommodation"; // These categories legitimately have no local platform presence
+    candidate.category !== "accommodation" &&
+    candidate.category !== "tour"; // Tours are tourist-facing by definition -- high TripAdvisor presence is expected and not a disconnect signal
 
   return {
     tripadvisor_disconnect_detected: tripadvisorDisconnect,

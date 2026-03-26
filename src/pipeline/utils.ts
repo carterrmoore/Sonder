@@ -323,6 +323,7 @@ export const TOURIST_NAME_PATTERNS: RegExp[] = [
 
 export interface CityContext {
   id: string;
+  slug: string;
   name: string;
   country: string;
   /** Coordinates of the top tourist landmarks (used in early trap pre-pass) */
